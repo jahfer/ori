@@ -89,7 +89,6 @@ GEM
 
 PLATFORMS
   arm64-darwin-23
-  ruby
 
 DEPENDENCIES
   minitest (~> 5.0)

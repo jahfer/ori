@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Open Sans', 'Helvetica Neue', sans-serif;
+      }
+
+      .vis-nesting-group.scope {
+        background-color: #e8f6ff !important;
+        border: none !important;
+        border-bottom: 1px solid #ccc !important;
+      }
+      .vis-group.scope {
+        background-color: #ffffd9;
+      }
+
+      .vis-nested-group.fiber {
+        background-color: #ffe8e8 !important;
+        border: none !important;
+        border-bottom: 1px solid #ccc !important;
+      }
+
+      .vis-item {
+        border: none;
+      }
+
+      .vis-item.created, .vis-item.opened {
+        background-color: #fff;
+        border-color: #ccc;
+      }
+
+      .vis-item.yielded {
+        background-color: #fff7ba;
+        border-color: #cab200;
+        border-style: dashed !important;
+      }
+
+      .vis-item.awaiting {
+        background-color: #fff;
+        border-color: #ccc;
+      }
+
+      .vis-item.sleeping {
+        background-color: #ffd7f9;
+        border-color: #f595e6;
+        border-style: dashed !important;
+      }
+
+      .vis-item.resuming {
+        background-color: #dddcff;
+        border-color: #a09dff;
+      }
+
+      .vis-item.completed, .vis-item.closed {
+        background-color: #e2ffe2;
+        border-color: #91df91;
+      }
+
+      .vis-item.waiting_io {
+        background-color: #ffd7f9;
+        border-color: #f595e6;
+        border-style: dashed !important;
+      }
+
+      .vis-item.error {
+        background-color: #ff5858;
+        border-color: #e12222;
+        color: #fff;
+      }
+
+      .vis-item.cancelled {
+        background-color: #450404;
+        border-color: #000;
+        color: #fff;
+      }
+
+      .vis-item.cancelling {
+        background-color: #ff9393;
+        border-color: #ff6363;
+        color: #fff;
+      }
+
+      .vis-item.tag {
+        background-color: #fef49c;
+        border-color: #d9cf78;
+        font-family: "HanziPen SC";
+        color: #6f6a40;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="visualization"></div>
+    <p><pre>cmd+scroll to zoom</pre></p>
+    <script type="text/javascript" src="https://unpkg.com/vis-timeline/standalone/umd/vis-timeline-graph2d.min.js"></script>
+    <script type="module" src="script.js"></script>
+
+    <script type="module">
+      import { dataset, groups } from "./script.js";
+      const container = document.getElementById("visualization");
+
+      const items = new vis.DataSet(dataset);
+      const vis_groups = new vis.DataSet(groups);
+      const timeline = new vis.Timeline(container);
+
+      const min = Math.min(...dataset.map(item => item.start));
+      const max = Math.max(...dataset.map(item => item.end)) || Math.max(...dataset.map(item => item.start));
+
+      timeline.setOptions({
+        editable: false,
+        start: 0,
+        end: max * 1.3,
+        min: 0,
+        max: max * 1.3,
+        align: "left",
+        showTooltips: true,
+        showMajorLabels: false,
+        selectable: false,
+        zoomKey: "metaKey",
+        tooltip: {
+          template: ({data}) => data ? JSON.stringify(data) : "",
+          delay: 200,
+        },
+        order: (a, b) => b.start - a.start
+      }); 
+      timeline.setGroups(vis_groups);
+      timeline.setItems(items);
+    </script>
+  </body>
+</html>

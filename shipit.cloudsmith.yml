@@ -1,0 +1,12 @@
+dependencies:
+  bundler:
+    without:
+      - test
+
+deploy:
+  override:
+    - buildkite-trigger ori-publish-package
+
+ci:
+  require:
+    - buildkite/ori

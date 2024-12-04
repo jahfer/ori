@@ -1,3 +1,4 @@
+# typed: false
 # frozen_string_literal: true
 
 module Ori
@@ -6,7 +7,7 @@ module Ori
 
     Event = Struct.new(:fiber_id, :type, :timestamp, :data, :scope_id)
     ScopeEvent = Struct.new(:scope_id, :type, :timestamp, :data)
-    
+
     def initialize
       @events = []
       @scope_events = []
@@ -22,13 +23,13 @@ module Ori
         @scope_hierarchy[parent_scope_id] ||= []
         @scope_hierarchy[parent_scope_id] << scope_id
       end
-      
+
       # Store scope names and use them as group IDs
       @scope_names ||= {}
       if name
         @scope_names[scope_id] = "Scope #{name}"
       end
-      
+
       # Track which fiber created this scope (if any)
       @scope_creators ||= {}
       @scope_creators[scope_id] = creating_fiber_id if creating_fiber_id
@@ -40,29 +41,29 @@ module Ori
 
     def record(fiber_id, type, data = nil)
       return unless fiber_id
-      
+
       @start_time ||= current_time
       @fiber_ids << fiber_id
-      
+
       @events << Event.new(
         fiber_id,
         type,
         (current_time - @start_time).round(8),
         data,
-        @fiber_scopes[fiber_id]
+        @fiber_scopes[fiber_id],
       )
     end
 
     def record_scope(scope_id, type, data = nil)
       return unless scope_id
-      
+
       @start_time ||= current_time
-      
+
       @scope_events << ScopeEvent.new(
         scope_id,
         type,
         (current_time - @start_time).round(8),
-        data
+        data,
       )
     end
 
@@ -72,7 +73,7 @@ module Ori
       name_width = 42
       min_spacing = 1
       duration = [@events.last.timestamp, 0.00000001].max
-      
+
       output = []
       output << "Fiber Execution Timeline (#{duration.round(3)}s)"
 
@@ -87,8 +88,8 @@ module Ori
         # Calculate raw positions based on timestamps
         positions = []
         fiber_events.each_with_index do |evt, idx|
-          raw_pos = (evt.timestamp / duration * TIMELINE_WIDTH).floor  # Use larger scale initially
-          
+          raw_pos = (evt.timestamp / duration * TIMELINE_WIDTH).floor # Use larger scale initially
+
           if idx > 0
             # Ensure minimum spacing from previous event
             prev_pos = positions.last
@@ -101,17 +102,17 @@ module Ori
         positions_by_fiber[fiber_id] = positions
         max_position = [max_position, positions.last].max
       end
-      
+
       # Calculate final timeline width based on max position
-      timeline_width = max_position + 1  # Add some padding
+      timeline_width = max_position + 1 # Add some padding
       separator = "=" * (timeline_width + name_width + 3)
       output << separator
-      
+
       # Second pass: render the timeline
       @fiber_ids.sort.each do |fiber_id|
         fiber_events = @events.select { |e| e.fiber_id == fiber_id }
         next if fiber_events.empty?
-        
+
         fiber_name = @fiber_names[fiber_id] || "Fiber #{fiber_id}"
         line = "#{fiber_name.ljust(name_width)} |"
         timeline = " " * timeline_width
@@ -124,58 +125,58 @@ module Ori
 
           # Choose character based on event type
           char = case evt.type
-          when :opened, :created then '█'
-          when :resuming then '▶'
-          when :waiting_io then '~'
-          when :sleeping then '.'
-          when :yielded then '╎'
-          when :closed, :completed then '▒'
-          when :cancelling then '⏹'
-          when :error, :cancelled then '✗'
-          when :awaiting then '↻'
-          else ' '
+          when :opened, :created then "█"
+          when :resuming then "▶"
+          when :waiting_io then "~"
+          when :sleeping then "."
+          when :yielded then "╎"
+          when :closed, :completed then "▒"
+          when :cancelling then "⏹"
+          when :error, :cancelled then "✗"
+          when :awaiting then "↻"
+          else " "
           end
-          
+
           timeline[pos] = char
-          
+
           # Fill the space until the next event if there is one
-          if next_pos
-            length = next_pos - pos - 1
-            if length > 0
-              fill_char = case evt.type
-              when :resuming then '═'
-              when :waiting_io then '~'
-              when :sleeping then '.'
-              when :yielded then '-'
-              else ' '
-              end
-              
-              timeline[pos + 1, length] = fill_char * length
-            end
+          next unless next_pos
+
+          length = next_pos - pos - 1
+          next if length <= 0
+
+          fill_char = case evt.type
+          when :resuming then "═"
+          when :waiting_io then "~"
+          when :sleeping then "."
+          when :yielded then "-"
+          else " "
           end
+
+          timeline[pos + 1, length] = fill_char * length
         end
-        
+
         line << timeline << "|"
         output << line
       end
-      
+
       output << separator
       output << "Legend: (█ Start) (▒ Finish) (═ Running) (~ IO-Wait) (. Sleeping) (╎ Yield) (✗ Error)"
-      
+
       output.join("\n")
     end
 
     def generate_timeline_data
       # Get unique scope IDs
       scope_ids = @fiber_scopes.values.uniq.sort
-      
+
       # Track nested groups for each parent
       nested_groups = Hash.new { |h, k| h[k] = [] }
-      
+
       # First, handle scope hierarchy relationships
       scope_ids.each do |scope_id|
         next unless scope_id
-        
+
         # If scope was created by a fiber, nest it under that fiber
         if @scope_creators&.[](scope_id)
           creating_fiber = @scope_creators[scope_id]
@@ -193,11 +194,11 @@ module Ori
           nested_groups[parent_group] << group_id
         end
       end
-      
+
       # Then map remaining fibers to their parent scopes
       @fiber_ids.sort.each do |fiber_id|
         next if nested_groups.values.any? { |groups| groups.include?("fiber_#{fiber_id}") }
-        
+
         scope_id = @fiber_scopes[fiber_id]
         parent_group = if scope_id
           "scope_#{scope_id}"
@@ -206,27 +207,27 @@ module Ori
         end
         nested_groups[parent_group] << "fiber_#{fiber_id}"
       end
-      
+
       # Generate groups data
       groups = []
-      
+
       # Add root scope group
-      groups << { 
+      groups << {
         id: "main",
-        content: "Root Scope", 
+        content: "Root Scope",
         value: 1,
         className: "main-scope",
         nestedGroups: nested_groups["main"],
         showNested: true,
       }
-      
+
       # Add scope groups
       scope_ids.each do |scope_id|
         next unless scope_id
-        
+
         group_id = "scope_#{scope_id}"
         title = @scope_names[scope_id] || "Scope #{scope_id}"
-        
+
         data = {
           id: group_id,
           order: scope_id,
@@ -242,7 +243,7 @@ module Ori
 
         groups << data
       end
-      
+
       # Add fiber groups (including those that create scopes)
       @fiber_ids.sort.each do |fiber_id|
         data = {
@@ -262,7 +263,7 @@ module Ori
 
       # Generate dataset from both scope and fiber events
       dataset = []
-      
+
       # Add scope lifecycle events
       @scope_events.each do |event|
         group_id = if event.scope_id == "main"
@@ -270,12 +271,12 @@ module Ori
         else
           "scope_#{event.scope_id}"
         end
-        
+
         item = {
           group: group_id,
           content: event.type.to_s,
           start: (event.timestamp * 1_000_000).to_i.to_s,
-          className: "#{event.type}",
+          className: event.type.to_s,
           data: event.data,
         }
 
@@ -286,7 +287,7 @@ module Ori
 
         dataset << item
       end
-      
+
       # Add fiber events
       @events.each do |event|
         item = {
@@ -296,22 +297,22 @@ module Ori
           className: event.type.to_s,
           data: event.data,
         }
-        
+
         # Add end time if the event has duration
         item[:end] = (event.end_timestamp * 1_000_000).to_i.to_s if event.respond_to?(:end_timestamp)
-        
+
         dataset << item
       end
 
       {
         groups: groups,
-        dataset: dataset
+        dataset: dataset,
       }
     end
 
     def write_timeline_data(output_path)
       data = generate_timeline_data
-      
+
       # Create JavaScript file content
       js_content = <<~JAVASCRIPT
         export const groups = #{data[:groups].to_json};
@@ -329,4 +330,4 @@ module Ori
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
   end
-end 
+end

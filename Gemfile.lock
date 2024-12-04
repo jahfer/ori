@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    ori (0.1.0)
+    shopify-ori (0.1.0)
       nio4r (~> 2.7)
       sorbet-runtime
       zeitwerk (~> 2.7.1)
@@ -93,11 +93,11 @@ PLATFORMS
 
 DEPENDENCIES
   minitest (~> 5.0)
-  ori!
   pry-sorbet (~> 0.2)
   rake (~> 13.0)
   rubocop-shopify
   rubocop-sorbet
+  shopify-ori!
   sorbet-static-and-runtime
   spoom
   tapioca

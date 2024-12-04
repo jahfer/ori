@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "bundler/gem_tasks"
-require "minitest/test_task"
+require "rake/testtask"
 
 Rake::TestTask.new(:test) do |t|
   t.ruby_opts = ["-W0", "-W:deprecated"]
@@ -14,4 +14,4 @@ require "rubocop/rake_task"
 
 RuboCop::RakeTask.new
 
-task default: %i[test rubocop]
+task default: [:test, :rubocop]

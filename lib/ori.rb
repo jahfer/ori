@@ -5,5 +5,7 @@ require "zeitwerk"
 loader = Zeitwerk::Loader.for_gem
 loader.setup
 
+require "sorbet-runtime"
+
 module Ori
 end

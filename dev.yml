@@ -37,5 +37,5 @@ commands:
     aliases: [update-rbis]
     run: |
       bin/tapioca gem &&
-      bin/spoom bump --from false --to true &&
-      bin/spoom bump --from true --to strict
+      bin/spoom srb bump --from false --to true &&
+      bin/spoom srb bump --from true --to strict

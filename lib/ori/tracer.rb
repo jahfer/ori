@@ -79,7 +79,7 @@ module Ori
 
       # First pass: calculate all positions with minimum spacing
       positions_by_fiber = {}
-      max_position = 0
+      max_position = T.let(0, T.untyped)
 
       @fiber_ids.sort.each do |fiber_id|
         fiber_events = @events.select { |e| e.fiber_id == fiber_id }
@@ -92,7 +92,7 @@ module Ori
 
           if idx > 0
             # Ensure minimum spacing from previous event
-            prev_pos = positions.last
+            prev_pos = T.unsafe(positions.last) || -1
             positions << [raw_pos, prev_pos + min_spacing].max
           else
             positions << raw_pos
@@ -100,7 +100,7 @@ module Ori
         end
 
         positions_by_fiber[fiber_id] = positions
-        max_position = [max_position, positions.last].max
+        max_position = [max_position, T.unsafe(positions.last) || 0].max
       end
 
       # Calculate final timeline width based on max position

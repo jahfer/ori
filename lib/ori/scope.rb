@@ -428,7 +428,7 @@ module Ori
     end
 
     def next_timeout
-      timeouts = []
+      timeouts = T.let([], T::Array[Numeric])
 
       # Add IO wait timeouts
       timeouts.concat(@waiting.values) unless @waiting.empty?
@@ -439,7 +439,7 @@ module Ori
       return 0 if timeouts.empty?
 
       # Calculate the nearest timeout
-      nearest = timeouts.min
+      nearest = T.must(timeouts.min)
       delay = nearest - current_time
 
       # Return 0 if the timeout is in the past, otherwise return the delay

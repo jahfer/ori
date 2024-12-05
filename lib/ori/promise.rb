@@ -23,6 +23,7 @@ module Ori
       return @value if resolved?
 
       Fiber.yield until resolved?
+      @value
     end
   end
 end

@@ -1,2 +1,7 @@
---dir
 .
+--ignore=.dev/
+--ignore=.git/
+--allowed-extension=.rb
+--allowed-extension=.rbi
+--allowed-extension=.rake
+--allowed-extension=.ru

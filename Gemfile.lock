@@ -9,6 +9,11 @@ PATH
 GEM
   remote: https://pkgs.shopify.io/basic/gems/ruby/
   specs:
+    shopify-types (0.8.38)
+      rubocop-sorbet (>= 0.7)
+      sorbet-static-and-runtime (>= 0.5.9892)
+      spoom
+      tapioca (>= 0.9.0)
 
 GEM
   remote: https://rubygems.org/
@@ -99,6 +104,7 @@ DEPENDENCIES
   rubocop-shopify
   rubocop-sorbet
   shopify-ori!
+  shopify-types!
   sorbet-static-and-runtime
   spoom
   tapioca

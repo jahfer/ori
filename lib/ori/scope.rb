@@ -29,6 +29,7 @@ module Ori
         end
 
         scope.await
+        scope
       ensure
         Fiber.set_scheduler(old_scheduler)
       end
@@ -91,7 +92,6 @@ module Ori
 
       # Only output visualization and write timeline data if we're the root scope
       if @parent_scope.nil?
-        puts trace_visualization
         @tracer.write_timeline_data(File.join(__dir__, "out", "script.js"))
       end
     end

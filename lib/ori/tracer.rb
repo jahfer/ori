@@ -1,6 +1,8 @@
 # typed: true
 # frozen_string_literal: true
 
+require "json"
+
 module Ori
   class Tracer
     TIMELINE_WIDTH = 80

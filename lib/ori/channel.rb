@@ -52,7 +52,6 @@ module Ori
       begin
         Fiber.yield until @receiver_waiting
       ensure
-        @sender_waiting = false
         @receiver_waiting = false
       end
       @queue.push(item)
@@ -65,7 +64,6 @@ module Ori
       begin
         Fiber.yield until @sender_waiting
       ensure
-        @receiver_waiting = false
         @sender_waiting = false
       end
       @queue.shift

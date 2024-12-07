@@ -32,7 +32,7 @@ module Ori
     alias_method :<<, :send
 
     sig { abstract.returns(Elem) }
-    def receive; end
+    def take; end
   end
 
   class ZeroSizedChannel
@@ -43,24 +43,24 @@ module Ori
     def initialize
       @queue = UnboundedQueue.new
       @sender_waiting = false
-      @receiver_waiting = false
+      @taker_waiting = false
     end
 
     sig { override.params(item: Elem).void }
     def send(item)
       @sender_waiting = true
       begin
-        Fiber.yield until @receiver_waiting
+        Fiber.yield until @taker_waiting
       ensure
-        @receiver_waiting = false
+        @taker_waiting = false
       end
       @queue.push(item)
     end
     alias_method :<<, :send
 
     sig { override.returns(Elem) }
-    def receive
-      @receiver_waiting = true
+    def take
+      @taker_waiting = true
       begin
         Fiber.yield until @sender_waiting
       ensure
@@ -88,7 +88,7 @@ module Ori
     alias_method :<<, :send
 
     sig { override.returns(Elem) }
-    def receive
+    def take
       Fiber.yield while @queue.peek == UnboundedQueue::EMPTY
       @queue.shift
     end

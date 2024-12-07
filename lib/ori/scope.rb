@@ -112,6 +112,10 @@ module Ori
     end
     alias_method :fork, :fiber
 
+    def fork_each(enumerable)
+      enumerable.each { |item| fork { yield(item) } }
+    end
+
     def next_id
       Random.uuid_v7(extra_timestamp_bits: 12)
     end

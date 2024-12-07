@@ -29,13 +29,13 @@ class OriTest < Minitest::Test
     assert_equal(6, value)
   end
 
-  def test_channel
-    c = Ori::Channel.new(2)
+  def test_buffered_channel
+    chan = Ori::Channel.new(2)
     results = []
 
     Ori::Scope.boundary do |scope|
-      scope.fork_each([1, nil, 3]) { |item| c << item }
-      scope.fork_each(3.times) { results << c.receive }
+      scope.fork_each([1, nil, 3]) { |item| chan << item }
+      scope.fork_each(3.times) { results << chan.receive }
     end
 
     assert_equal([1, nil, 3], results)
@@ -44,11 +44,11 @@ class OriTest < Minitest::Test
   def test_cancel_after
     skip
 
-    c = Ori::Channel.new(2)
+    chan = Ori::Channel.new(2)
     results = []
 
     Ori::Scope.boundary(cancel_after: 0.01) do
-      results << c.receive
+      results << chan.receive
     end
 
     assert_equal([], results)
@@ -57,11 +57,12 @@ class OriTest < Minitest::Test
   def test_raise_after
     skip
 
-    c = Ori::Channel.new(2)
+    chan = Ori::Channel.new(2)
 
     assert_raises(Ori::Scope::Canceled) do
       Ori::Scope.boundary(raise_after: 0.01) do
-        c.receive
+        chan.receive
       end
     end
   end
+end

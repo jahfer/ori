@@ -3,18 +3,93 @@
 
 module Ori
   class Channel
+    class << self
+      extend(T::Sig)
+
+      sig { params(size: Integer).returns(BaseChannel) }
+      def new(size)
+        if size.zero?
+          ZeroSizedChannel.new
+        else
+          BufferedChannel.new(size)
+        end
+      end
+    end
+  end
+
+  # Base class for different channel implementations
+  module BaseChannel
+    extend(T::Sig)
+    extend(T::Generic)
+
+    Elem = type_member
+
+    abstract!
+
+    sig { abstract.params(item: Elem).void }
+    def send(item); end
+
+    alias_method :<<, :send
+
+    sig { abstract.returns(Elem) }
+    def receive; end
+  end
+
+  class ZeroSizedChannel
+    extend(T::Sig)
+    include(BaseChannel)
+
+    sig { override.void }
+    def initialize
+      @queue = UnboundedQueue.new
+      @sender_waiting = false
+      @receiver_waiting = false
+    end
+
+    sig { override.params(item: Elem).void }
+    def send(item)
+      @sender_waiting = true
+      begin
+        Fiber.yield until @receiver_waiting
+      ensure
+        @sender_waiting = false
+        @receiver_waiting = false
+      end
+      @queue.push(item)
+    end
+    alias_method :<<, :send
+
+    sig { override.returns(Elem) }
+    def receive
+      @receiver_waiting = true
+      begin
+        Fiber.yield until @sender_waiting
+      ensure
+        @receiver_waiting = false
+        @sender_waiting = false
+      end
+      @queue.shift
+    end
+  end
+
+  class BufferedChannel
+    extend(T::Sig)
+    include(BaseChannel)
+
+    sig { override.params(size: Integer).void }
     def initialize(size)
       @queue = UnboundedQueue.new
       @size = size
     end
 
-    # TODO: block until receiver is ready if queue is size 0
+    sig { override.params(item: Elem).void }
     def send(item)
       Fiber.yield until @queue.size <= @size
       @queue.push(item)
     end
     alias_method :<<, :send
 
+    sig { override.returns(Elem) }
     def receive
       Fiber.yield while @queue.peek == UnboundedQueue::EMPTY
       @queue.shift
@@ -25,27 +100,27 @@ module Ori
     EMPTY = "empty"
 
     def initialize
-      @queue = []
+      @buffer = []
     end
 
     def size
-      @queue.size
+      @buffer.size
     end
 
     def push(item)
-      @queue << item
+      @buffer << item
     end
 
     def peek
-      if @queue.empty?
+      if @buffer.empty?
         EMPTY
       else
-        @queue.first
+        @buffer.first
       end
     end
 
     def shift
-      @queue.shift
+      @buffer.shift
     end
   end
   private_constant(:UnboundedQueue)

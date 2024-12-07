@@ -82,7 +82,7 @@ module Ori
 
     sig { override.params(item: Elem).void }
     def send(item)
-      Fiber.yield until @queue.size <= @size
+      Fiber.yield until @queue.size < @size
       @queue.push(item)
     end
     alias_method :<<, :send

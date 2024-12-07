@@ -35,10 +35,28 @@ class OriTest < Minitest::Test
 
     Ori::Scope.boundary do |scope|
       scope.fork_each([1, nil, 3]) { |item| chan << item }
-      scope.fork_each(3.times) { results << chan.receive }
+      scope.fork_each(3.times) { results << chan.take }
     end
 
     assert_equal([1, nil, 3], results)
+  end
+
+  def test_sync_channel
+    chan = Ori::Channel.new(0)
+
+    Ori::Scope.boundary do |scope|
+      scope.fork do
+        puts "Sending data..."
+        chan << "Hello!"
+        puts "Data sent!"
+      end
+
+      scope.fork do
+        puts "Receiving data..."
+        chan.take
+        puts "Data received!"
+      end
+    end
   end
 
   def test_cancel_after
@@ -48,7 +66,7 @@ class OriTest < Minitest::Test
     results = []
 
     Ori::Scope.boundary(cancel_after: 0.01) do
-      results << chan.receive
+      results << chan.take
     end
 
     assert_equal([], results)
@@ -61,7 +79,7 @@ class OriTest < Minitest::Test
 
     assert_raises(Ori::Scope::Canceled) do
       Ori::Scope.boundary(raise_after: 0.01) do
-        chan.receive
+        chan.take
       end
     end
   end

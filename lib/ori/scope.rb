@@ -124,6 +124,7 @@ module Ori
       # Only output visualization and write timeline data if we're the root scope
       if @parent_scope.nil?
         @tracer.write_timeline_data(File.join(__dir__, "out", "script.js"))
+        puts "See timeline visualization at #{File.join(__dir__, "out", "index.html")}"
       end
     end
 

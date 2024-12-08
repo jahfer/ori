@@ -19,15 +19,15 @@ bundle install
 The core of Ori is the `Ori::Scope`, which provides a controlled environment for running fibers and managing their lifecycle.
 
 ```ruby
-Ori::Scope.run do |scope|
+Ori::Scope.boundary do |scope|
   # Your concurrent code here
-  scope.spawn do
+  scope.fork do
     # This runs in a new fiber
     sleep 1
     puts "Hello from fiber!"
   end
   # Multiple fibers can run concurrently
-  scope.spawn do
+  scope.fork do
     sleep 0.5
     puts "Another fiber here!"
   end
@@ -63,7 +63,7 @@ end
 Promises represent values that may not be immediately available. They're perfect for handling asynchronous operations.
 
 ```ruby
-Ori::Scope.run do |scope|
+Ori::Scope.boundary do |scope|
   promise = Ori::Promise.new
   scope.fork do
     sleep 1
@@ -80,7 +80,7 @@ end
 Channels provide a way to communicate between fibers by passing values between them:
 
 ```ruby
-Ori::Scope.run do |scope|
+Ori::Scope.boundary do |scope|
   channel = Ori::Channel.new(5)
   # Producer
   scope.fork do
@@ -118,7 +118,7 @@ channel << 1 # Will block until `take` is called
 When you need to enforce a critical section with strict ordering, use a mutex:
 
 ```ruby
-Ori::Scope.run do |scope|
+Ori::Scope.boundary do |scope|
   mutex = Ori::Mutex.new
   counter = 0
   5.times do
@@ -138,7 +138,7 @@ end
 Semaphors are a generalized form of mutexes that can be used to control access to _n_ limited resources:
 
 ```ruby
-Ori::Scope.run do |scope|
+Ori::Scope.boundary do |scope|
   # Allow up to 3 concurrent operations
   semaphore = Ori::Semaphore.new(3)
   10.times do |i|

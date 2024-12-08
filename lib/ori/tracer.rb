@@ -323,7 +323,8 @@ module Ori
       JAVASCRIPT
 
       # Write to file
-      File.write(output_path, js_content)
+      File.write(File.join(output_path, "index.html"), File.read(File.join(__dir__, "out", "index.html")))
+      File.write(File.join(output_path, "script.js"), js_content)
     end
 
     private

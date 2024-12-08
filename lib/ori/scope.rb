@@ -106,8 +106,12 @@ module Ori
       @tracer.record_scope(@scope_id, :tag, name)
     end
 
-    def trace_visualization
+    def print_ascii_trace
       @tracer.visualize
+    end
+
+    def write_html_trace(output_path)
+      @tracer.write_timeline_data(output_path)
     end
 
     def await
@@ -120,12 +124,6 @@ module Ori
       close_scope
       # Deregister from parent when done
       @parent_scope&.deregister_child_scope(self)
-
-      # Only output visualization and write timeline data if we're the root scope
-      if @parent_scope.nil?
-        @tracer.write_timeline_data(File.join(__dir__, "out", "script.js"))
-        puts "See timeline visualization at #{File.join(__dir__, "out", "index.html")}"
-      end
     end
 
     def fiber(&block)

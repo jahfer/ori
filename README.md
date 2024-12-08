@@ -34,6 +34,12 @@ Ori::Scope.boundary do |scope|
 end # Waits for all fibers to complete
 ```
 
+<details>
+<summary>See trace visualization</summary>
+
+![Trace visualization](./docs/images/example_boundary.png)
+</details>
+
 You can also use `Ori::Scope.boundary` with timeouts to automatically cancel or raise after a specified duration. When using `cancel_after`, the scope will be cancelled but the boundary call will return normally. With `raise_after`, a `Ori::Scope::CancellationError` will be raised after the specified duration. Both options will properly clean up any running fibers.
 
 Nested cancellation scopes are fully supported - a parent scope's deadline will be inherited by child scopes, and cancelling a parent scope will cancel all child scopes:
@@ -56,6 +62,12 @@ Ori::Scope.boundary(raise_after: 5) do |scope|
 end
 ```
 
+<details>
+<summary>See trace visualization</summary>
+
+![Trace visualization](./docs/images/example_boundary_cancellation.png)
+</details>
+
 ### Concurrency Utilities
 
 #### `Ori::Promise`
@@ -67,13 +79,19 @@ Ori::Scope.boundary do |scope|
   promise = Ori::Promise.new
   scope.fork do
     sleep 1
-    promise.fulfill("Hello from the future!")
+    promise.resolve("Hello from the future!")
   end
   # Wait for the promise to be fulfilled
   result = promise.await
   puts result # => "Hello from the future!"
 end
 ```
+
+<details>
+<summary>See trace visualization</summary>
+
+![Trace visualization](./docs/images/example_promise.png)
+</details>
 
 #### `Ori::Channel`
 
@@ -85,17 +103,22 @@ Ori::Scope.boundary do |scope|
   # Producer
   scope.fork do
     5.times { |i| channel << i }
-    channel.close
   end
 
   # Consumer
   scope.fork do
-    while (value = channel.take)
-      puts "Received: #{value}"
+    5.times do
+      puts "Received: #{channel.take}"
     end
   end
 end
 ```
+
+<details>
+<summary>See trace visualization</summary>
+
+![Trace visualization](./docs/images/example_channel.png)
+</details>
 
 Channels can be bounded to limit the number of items they can hold. When the channel is full, `put`/`<<` will block until there is room:
 
@@ -133,6 +156,12 @@ Ori::Scope.boundary do |scope|
 end
 ```
 
+<details>
+<summary>See trace visualization</summary>
+
+![Trace visualization](./docs/images/example_mutex.png)
+</details>
+
 #### `Ori::Semaphore`
 
 Semaphors are a generalized form of mutexes that can be used to control access to _n_ limited resources:
@@ -143,7 +172,7 @@ Ori::Scope.boundary do |scope|
   semaphore = Ori::Semaphore.new(3)
   10.times do |i|
     scope.fork do
-      semaphore.acquire do
+      semaphore.synchronize do
         puts "Processing #{i}"
         sleep 1 # Simulate work
       end
@@ -151,6 +180,12 @@ Ori::Scope.boundary do |scope|
   end
 end
 ```
+
+<details>
+<summary>See trace visualization</summary>
+
+![Trace visualization](./docs/images/example_semaphore.png)
+</details>
 
 ## Releases
 

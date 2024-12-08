@@ -1,109 +1,155 @@
-Thanks for using the Library README Template!
-* Consider the value each optional section brings before removing.
-* For guidance, take a look at the commented out examples for each section.
-* If the content is lengthy, consider breaking it off into separate pages and linking to it.
-* This template is designed with internal libraries in mind. For public repos, remove proprietary information and consider reaching out in [#dev-context](https://shopify.slack.com/archives/CEQ6MR2F7) for assistance.
-* Leave feedback about the template in the [Google Doc](https://docs.google.com/document/d/1cE3X_yg5mTBso4d960RiYQL3PEcY6-WCkdw4ik9TpeE/edit?usp=sharing) or in [#dev-context](https://shopify.slack.com/archives/CEQ6MR2F7)
+# Ori
 
----
+```ruby
+gem "ori"
+```
 
-# ori
-**Badges (optional):** Services found in ServicesDB have the option to show build badges, offering quick links and build status information. When selecting badges, consider the most important statuses for your repo.\
-Can include:
-* **Services DB status badge:** Available if your repo is for a service:
-  [![ori](https://services.shopify.io/services/ori/badge.svg)](https://services.shopify.io/services/ori).
-* **Buildkite status badge:** Available if your repo is for a service. [Follow the help guide to get your badge code](https://buildkite.com/docs/integrations/build-status-badges).
-* **CircleCI status badge:** Can be added following [this help guide](https://circleci.com/docs/2.0/status-badges/).
-* **Cloudsmith version badge:** Can be found on the badges tab for the package in Cloudsmith.
-* **Other badges:** Additional status badges relevant to your project can be found at http://shields.io/.
-* **Custom badges:** Custom badges can be added using small image icons of your choice. Popular custom badges include Shipit and Splunk.
+Then execute:
 
-<!--
-Examples:
-* Plus B2B Learning Project: Handshake Importer Prototype - custom badges](https://github.com/Shopify/plus-b2b-learning-project-hs-importer/blob/master/README.md)
--->
+```sh
+bundle install
+```
 
-[About this library](#about-this-library) | [How to install this library](#how-to-install-this-library) | [Contribute to this library](#contribute-to-this-library-optional) | [Projects & Roadmap](#projects--roadmap-optional) | [Releases](#releases) | [Policies](#policies-optional)
 
-## About this library
-**Introduction:** Main goal of the library, and why it's important in 2-3 short paragraphs.
+## Usage
 
-|                |                                                                                                                                      |
-|----------------|--------------------------------------------------------------------------------------------------------------------------------------|
-| Current status | Current project status (if applicable). Examples include: maintenance, deprecated, beta, etc. Include a link to the roadmap if relevant.                                                 |
-| Owner          | Who maintains the library? Link to Vault or Github teams. Break into new section if extensive.                            |
-| Help           | Where to go for help or ask questions. Link any relevant help channels, playbooks or resources. Break into new section if extensive. |
+### Ori::Scope
 
-<!--
-Examples:
-* [Ability Client Library - About this repo section](https://github.com/Shopify/ability-client#about-this-repo)
-* [Active Merchant Library - Introduction section](https://github.com/activemerchant/active_merchant#active-merchant)
-* [Shopify App Library - Introduction paragraph](https://github.com/Shopify/shopify_app#introduction)
-* [Business Platform - Stewards table with github teams](https://github.com/Shopify/business-platform/blob/master/README.md#stewards)
-* [Seamster - Motivation & intent section](https://github.com/Shopify/seamster/blob/master/README.md#motivation--intent)
--->
+The core of Ori is the `Ori::Scope`, which provides a controlled environment for running fibers and managing their lifecycle.
 
-## How to install this library
-A quick start guide for users who want to install this library. Can include subsections such as:
-* Requirements
-* Setup
-* Library specific steps
-* Troubleshooting
+```ruby
+Ori::Scope.run do |scope|
+  # Your concurrent code here
+  scope.spawn do
+    # This runs in a new fiber
+    sleep 1
+    puts "Hello from fiber!"
+  end
+  # Multiple fibers can run concurrently
+  scope.spawn do
+    sleep 0.5
+    puts "Another fiber here!"
+  end
+end # Waits for all fibers to complete
+```
 
-<!--
-Examples:
-* [Ability Client Library - How to use this repo](https://github.com/Shopify/ability-client#how-to-use-this-repo)
-* [Shopify App Library - Requirements section](https://github.com/Shopify/shopify_app#requirements)
-* [Shopify App Library - Usage section](https://github.com/Shopify/shopify_app#usage)
-* [Blaast Library - Detailed initializing section](https://github.com/Shopify/blaast#initializing-from-blast-off)
--->
+You can also use `Ori::Scope.boundary` with timeouts to automatically cancel or raise after a specified duration. When using `cancel_after`, the scope will be cancelled but the boundary call will return normally. With `raise_after`, a `Ori::Scope::CancellationError` will be raised after the specified duration. Both options will properly clean up any running fibers.
 
-## How to use this library
-A quick start guide for users who want to use the library. Can include subsections such as:
-* API spec/link to live API docs
-* Examples
-* Tutorials
-* How to run tests
-* Tech Design Docs
+Nested cancellation scopes are fully supported - a parent scope's deadline will be inherited by child scopes, and cancelling a parent scope will cancel all child scopes:
 
-If the content exceeds 3 paragraphs or includes large tables/graphs, break out into a new Markdown file, and link to it.
+```ruby
+Ori::Scope.boundary(raise_after: 5) do |scope|
+  # This inner scope inherits the 5 second deadline
+  scope.fork do
+    # Will raise `Ori::Scope::CancellationError` after 5 seconds
+    sleep(10)
+  end
 
-<!--
-Examples:
-* [Active Merchant Library - GettingStarted.md file and API docs linked in Usage section](https://github.com/activemerchant/active_merchant#usage)
-* [Shopify App Library - Usage section](https://github.com/Shopify/shopify_app#usage)
-* [Ability Client Library - How to use this repo](https://github.com/Shopify/ability-client#how-to-use-this-repo)
+  # This inner scope has a shorter deadline
+  Ori::Scope.boundary(cancel_after: 2) do |inner_scope|
+    inner_scope.fork do
+      # Will be cancelled after 2 seconds
+      sleep(10)
+    end
+  end
+end
+```
 
--->
+### Concurrency Utilities
 
-## Contribute to this library (optional)
-Details your contribution guidelines, including if the library does not accept them. Can include additional steps such as:
-* What is necessary for PRs (formatting, pings)
-* Architecture and style guides
-* Version release and management (if this information is split into a new file, it should be named RELEASING.md)
-  Before removing this section, consider whether a new hire reading this README for the first time would be able to understand how to contribute to the repo. If the content exceeds 3 paragraphs or includes large tables/graphs, break out into a CONTRIBUTING.md file, and link to it.
+#### `Ori::Promise`
 
-<!--
-Examples:
-* [Active Merchant Library - CONTRIBUTING.md file](https://github.com/activemerchant/active_merchant/blob/master/CONTRIBUTING.md)
-* [Delivery component - Architecture and style onboarding content](https://github.com/Shopify/shopify/blob/master/components/delivery/README.md#component-architecture-and-style)
-* [Oberlo Merchant - Developer onboarding format](https://github.com/Shopify/oberlo-merchant/blob/master/README.md)
-* [Business Platform - Development and deployment content](https://github.com/Shopify/business-platform/blob/master/README.md#development)
-* [Good CONTRIBUTING.md template gist](https://gist.github.com/PurpleBooth/b24679402957c63ec426)
--->
+Promises represent values that may not be immediately available. They're perfect for handling asynchronous operations.
 
-## Projects & roadmap (optional)
-Link to projects and roadmaps where relevant. A high level overview of the future of the library. This section should guide the reader towards understanding what features currently exist and what features are planned.
+```ruby
+Ori::Scope.run do |scope|
+  promise = Ori::Promise.new
+  scope.fork do
+    sleep 1
+    promise.fulfill("Hello from the future!")
+  end
+  # Wait for the promise to be fulfilled
+  result = promise.await
+  puts result # => "Hello from the future!"
+end
+```
 
-| Feature name | Feature description                                                         |
-|--------------|-----------------------------------------------------------------------------|
-| Feature      | Example description of the feature (link to relevant project if applicable). Marked as Done, ongoing or planned. |
+#### `Ori::Channel`
 
-<!--
-Examples:
-* [Ability Client Library - Projects and roadmap section](https://github.com/Shopify/ability-client#projects--roadmap)
-* [Magellan - Properties and wishlist content](https://github.com/Shopify/magellan/blob/master/README.md#architecture)
--->
+Channels provide a way to communicate between fibers by passing values between them:
+
+```ruby
+Ori::Scope.run do |scope|
+  channel = Ori::Channel.new(5)
+  # Producer
+  scope.fork do
+    5.times { |i| channel << i }
+    channel.close
+  end
+
+  # Consumer
+  scope.fork do
+    while (value = channel.take)
+      puts "Received: #{value}"
+    end
+  end
+end
+```
+
+Channels can be bounded to limit the number of items they can hold. When the channel is full, `put`/`<<` will block until there is room:
+
+```ruby
+channel = Ori::Channel.new(2)
+scope.fork do
+  5.times { |i| channel << i } # Will block after the first two puts
+end
+```
+
+If a channel has a capacity of `0`, it becomes a simple synchronous queue:
+
+```ruby
+channel = Ori::Channel.new(0)
+channel << 1 # Will block until `take` is called
+```
+
+#### `Ori::Mutex`
+
+When you need to enforce a critical section with strict ordering, use a mutex:
+
+```ruby
+Ori::Scope.run do |scope|
+  mutex = Ori::Mutex.new
+  counter = 0
+  5.times do
+    scope.fork do
+      mutex.synchronize do
+        current = counter
+        sleep 0.1 # Simulate work
+        counter = current + 1
+      end
+    end
+  end
+end
+```
+
+#### `Ori::Semaphore`
+
+Semaphors are a generalized form of mutexes that can be used to control access to _n_ limited resources:
+
+```ruby
+Ori::Scope.run do |scope|
+  # Allow up to 3 concurrent operations
+  semaphore = Ori::Semaphore.new(3)
+  10.times do |i|
+    scope.fork do
+      semaphore.acquire do
+        puts "Processing #{i}"
+        sleep 1 # Simulate work
+      end
+    end
+  end
+end
+```
 
 ## Releases
 
@@ -115,15 +161,9 @@ The procedure to publish a new release version is as follows:
 * Run bundle install to bump the version of the gem in `Gemfile.lock`
 * Open a pull request, review, and merge
 * Review commits since the last release to identify user-facing changes that should be included in the release notes
-* [Create a release on GitHub](https://github.com/Shopify/ori/releases/new) with a version number that matches `lib/ori/version.rb`. More on [creating releases](https://help.github.com/articles/creating-releases).
-* [Deploy via Shipit](https://shipit.shopify.io/shopify/ori/cloudsmith) and see your [latest version on Cloudsmith](https://cloudsmith.io/~shopify/repos/gems/packages/detail/ruby/ori/latest)
+* [Create a release on GitHub](https://github.com/Shopify/ori/releases/new) with a version number that matches `lib/ori/version.rb`
+* [Deploy via Shipit](https://shipit.shopify.io/shopify/ori/cloudsmith)
 
-## Policies (optional)
-Additional policies that affect contributions or use of this library. This can include topics such as:
-* Compatibility
-* Stability
+## License
 
-<!--
-Examples:
-* [Active Merchant - stability and compatibility policies](https://github.com/activemerchant/active_merchant#api-stability-policy)
--->
+The gem is available as open source under the terms of the MIT License.

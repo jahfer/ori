@@ -14,6 +14,7 @@ gem "rubocop-sorbet", require: false
 gem "sorbet-static-and-runtime", require: false
 gem "spoom", require: false
 gem "tapioca", require: false
+gem "debug", ">= 1.0.0"
 
 # Specify any Shopify private dependencies (development or runtime in this block)
 source "https://pkgs.shopify.io/basic/gems/ruby" do

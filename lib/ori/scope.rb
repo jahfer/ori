@@ -3,13 +3,21 @@
 
 require "nio"
 require "random/formatter"
+require "debug"
 
 module Ori
   class Scope
-    class CancellationError < StandardError; end
+    class CancellationError < StandardError
+      attr_reader :scope
+
+      def initialize(scope, message = "Operation timed out")
+        @scope = scope
+        super(message)
+      end
+    end
 
     class << self
-      def boundary(name: nil, &block)
+      def boundary(name: nil, cancel_after: nil, raise_after: nil, &block)
         old_scheduler = Fiber.current_scheduler
         nested_scope = old_scheduler.is_a?(Scope)
         scope = if nested_scope
@@ -18,24 +26,42 @@ module Ori
           Scope.new(name: name)
         end
 
+        # Set timeout if specified
+        scope.deadline(cancel_after || raise_after) if cancel_after || raise_after
+
         Fiber.set_scheduler(scope)
 
-        # Ensure the block runs in a non-blocking fiber,
-        # particularly because the root fiber is blocking
-        if Fiber.current.blocking?
-          scope.fork { block.call(scope) }
-        else
-          yield(scope)
-        end
+        begin
+          if Fiber.current.blocking?
+            scope.fork { block.call(scope) }
+          else
+            yield(scope)
+          end
 
-        scope.await
-        scope
-      ensure
-        Fiber.set_scheduler(old_scheduler)
+          scope.await
+          scope
+        rescue CancellationError => error
+          # Re-raise if:
+          # 1. The error is from a different scope, or
+          # 2. This is our error but it's from raise_after
+          raise if error.scope != scope || !raise_after.nil?
+
+          scope # Return the scope even when cancelled
+        ensure
+          Fiber.set_scheduler(old_scheduler)
+        end
       end
     end
 
-    attr_reader :scope_id, :parent_scope, :fiber_ids, :readable, :writable, :waiting, :tracer, :child_scopes
+    attr_reader :scope_id,
+      :parent_scope,
+      :fiber_ids,
+      :readable,
+      :writable,
+      :waiting,
+      :tracer,
+      :child_scopes,
+      :deadline_owner
 
     def initialize(parent_scope = nil, name: nil)
       @scope_id = Random.uuid_v7(extra_timestamp_bits: 12)
@@ -44,6 +70,12 @@ module Ori
       @tracer = parent_scope&.tracer || Tracer.new
       @cancelled = false
       @cancel_reason = nil
+
+      # Inherit parent's deadline if it exists
+      if parent_scope&.remaining_deadline
+        @deadline_at = current_time + parent_scope.remaining_deadline
+        @deadline_owner = parent_scope.deadline_owner
+      end
 
       # Get the creating fiber's ID from the parent scope if we're in a fiber
       creating_fiber_id = if parent_scope
@@ -266,6 +298,34 @@ module Ori
 
     def closed? = @closed
 
+    def deadline(duration)
+      @parent_scope&.remaining_deadline
+
+      # If we already have a deadline (inherited or set), use the shorter one
+      current_remaining = remaining_deadline
+      return if current_remaining && current_remaining < duration
+
+      @deadline_at = current_time + duration
+      @deadline_owner = self
+    end
+
+    def check_deadline
+      return unless @deadline_at
+
+      if current_time >= @deadline_at
+        error = CancellationError.new(@deadline_owner)
+        cancel!(error)
+        raise error
+      end
+    end
+
+    def remaining_deadline
+      return unless @deadline_at
+
+      remaining = @deadline_at - current_time
+      remaining.positive? ? remaining : 0
+    end
+
     protected
 
     def close_scope
@@ -295,10 +355,10 @@ module Ori
     def process_available_work
       @tracer.record_scope(@scope_id, :awaiting)
 
+      check_deadline
       cleanup_dead_fibers
 
       # Process pending fibers, skipping sleeping ones
-      # Note: resume_fiber may re-append to @pending if work remains
       fibers_to_process = @pending
       @pending = []
       fibers_to_process.each do |fiber|
@@ -317,7 +377,6 @@ module Ori
       # Handle readable IOs
       readable&.each do |io|
         @readable[io].each do |fiber|
-          # RubyLogger.debug("io_select: readable #{io} - resuming")
           resume_fiber(fiber)
         end
       end
@@ -325,7 +384,6 @@ module Ori
       # Handle writable IOs
       writable&.each do |io|
         @writable[io].each do |fiber|
-          # RubyLogger.debug("io_select: writable #{io} - resuming")
           resume_fiber(fiber)
         end
       end
@@ -333,17 +391,17 @@ module Ori
       handle_timeouts(current_time)
     end
 
-    def cancel!(reason = nil)
+    def cancel!(cause = nil)
       return if @cancelled
 
       @cancelled = true
-      @cancel_reason = reason
-      cancellation_error = CancellationError.new(reason)
+      @cancel_reason = cause
+      cancellation_error = cause.is_a?(CancellationError) ? cause : CancellationError.new(self, cause)
 
       @tracer.record_scope(@scope_id, :cancelling, cancellation_error.message)
 
       @child_scopes.each do |scope|
-        scope.cancel!(@cancel_reason)
+        scope.cancel!(cause)
       end
 
       @pending.each do |fiber|
@@ -361,9 +419,6 @@ module Ori
       cleanup_io_resources
 
       @tracer.record_scope(@scope_id, :cancelled)
-      # rescue => e
-      #   RubyLogger.error("Error in Ori::Scope#cancel! [#{e.class}] #{e.message}")
-      #   raise e
     end
 
     private
@@ -401,6 +456,8 @@ module Ori
     end
 
     def handle_timeouts(now = current_time)
+      check_deadline
+
       fibers_to_resume = []
       @waiting.each_key do |fiber|
         if @waiting[fiber] <= now
@@ -439,6 +496,9 @@ module Ori
 
       # Add sleep timeouts (excluding nil values for indefinite sleeps)
       timeouts.concat(@sleeping.values.compact) unless @sleeping.empty?
+
+      # Add deadline timeout if one exists
+      timeouts << @deadline_at if @deadline_at
 
       return 0 if timeouts.empty?
 

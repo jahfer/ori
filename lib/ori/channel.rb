@@ -3,10 +3,15 @@
 
 module Ori
   class Channel
+    extend(T::Sig)
+    extend(T::Generic)
+
+    Elem = type_template
+
     class << self
       extend(T::Sig)
 
-      sig { params(size: Integer).returns(BaseChannel) }
+      sig { params(size: Integer).returns(BaseChannel[Elem]) }
       def new(size)
         if size.zero?
           ZeroSizedChannel.new
@@ -27,9 +32,9 @@ module Ori
     abstract!
 
     sig { abstract.params(item: Elem).void }
-    def send(item); end
+    def put(item); end
 
-    alias_method :<<, :send
+    alias_method :<<, :put
 
     sig { abstract.returns(Elem) }
     def take; end
@@ -37,42 +42,49 @@ module Ori
 
   class ZeroSizedChannel
     extend(T::Sig)
+    extend(T::Generic)
     include(BaseChannel)
+
+    Elem = type_member
+    EMPTY = "empty"
 
     sig { override.void }
     def initialize
-      @queue = UnboundedQueue.new
-      @sender_waiting = false
       @taker_waiting = false
+      @value = EMPTY
     end
 
     sig { override.params(item: Elem).void }
-    def send(item)
+    def put(item)
       @sender_waiting = true
       begin
+        @value = item
         Fiber.yield until @taker_waiting
       ensure
         @taker_waiting = false
       end
-      @queue.push(item)
     end
-    alias_method :<<, :send
+    alias_method :<<, :put
 
     sig { override.returns(Elem) }
     def take
       @taker_waiting = true
       begin
-        Fiber.yield until @sender_waiting
+        Fiber.yield until @value != EMPTY
+        @value
       ensure
+        @value = EMPTY
         @sender_waiting = false
       end
-      @queue.shift
     end
   end
 
   class BufferedChannel
     extend(T::Sig)
+    extend(T::Generic)
     include(BaseChannel)
+
+    Elem = type_member
 
     sig { override.params(size: Integer).void }
     def initialize(size)
@@ -81,11 +93,11 @@ module Ori
     end
 
     sig { override.params(item: Elem).void }
-    def send(item)
+    def put(item)
       Fiber.yield until @queue.size < @size
       @queue.push(item)
     end
-    alias_method :<<, :send
+    alias_method :<<, :put
 
     sig { override.returns(Elem) }
     def take

@@ -1,5 +1,9 @@
 # Ori
 
+Ori is a concurrency library for Ruby that provides a robust set of primitives for building concurrent applications. The name comes from the Japanese word 折り "ori" meaning "fold", reflecting how concurrent operations interleave.
+
+## Usage
+
 ```ruby
 gem "ori"
 ```
@@ -9,9 +13,6 @@ Then execute:
 ```sh
 bundle install
 ```
-
-
-## Usage
 
 ### Ori::Scope
 

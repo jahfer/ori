@@ -3,7 +3,6 @@
 
 require "nio"
 require "random/formatter"
-require "debug"
 
 module Ori
   class Scope

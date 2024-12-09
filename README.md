@@ -56,8 +56,8 @@ Ori::Scope.boundary do |scope|
   end
 end
 
- # Boundary blocks until all fibers complete
- puts "Success!"
+# Boundary blocks until all fibers complete
+puts "Success!"
 ```
 
 **Output:**
@@ -298,11 +298,12 @@ Semaphors are a generalized form of mutexes that can be used to control access t
 Ori::Scope.boundary do |scope|
   # Allow up to 3 concurrent operations
   semaphore = Ori::Semaphore.new(3)
+  
   10.times do |i|
     scope.fork do
       semaphore.synchronize do
         puts "Processing #{i}"
-        sleep 1 # Simulate work
+        sleep(1) # Simulate work
       end
     end
   end

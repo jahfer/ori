@@ -239,8 +239,7 @@ When you need to enforce a critical section with strict ordering, use a mutex:
 
 ```ruby
 result = []
-
-closed_scope = Ori::Scope.boundary do |scope|
+Ori::Scope.boundary do |scope|
   mutex = Ori::Mutex.new
   counter = 0
 

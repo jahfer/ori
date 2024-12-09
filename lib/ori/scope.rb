@@ -110,8 +110,8 @@ module Ori
       @tracer.visualize
     end
 
-    def write_html_trace(output_path)
-      @tracer.write_timeline_data(output_path)
+    def write_html_trace(directory)
+      @tracer.write_timeline_data(directory)
     end
 
     def await

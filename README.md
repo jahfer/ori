@@ -2,11 +2,13 @@
 
 Ori is a concurrency library for Ruby that provides a robust set of primitives for building concurrent applications. The name comes from the Japanese word 折り "ori" meaning "fold", reflecting how concurrent operations interleave.
 
+Due to Ruby's GIL (Global Interpreter Lock), CRuby is unable to take advantage of a multi-threaded environment in the way that other languages do. Ori provides a set of primitives that allow you to build concurrent applications—that is, applications that interleave execution within a single thread—without blocking the entire Ruby interpreter for each task.
+
 ## Table of Contents
 
 - [Installation](#installation)
 - [Usage](#usage)
-  - [`Ori::Scope`](#oriscope)
+  - [Defining Boundaries](#defining-boundaries)
     - [Timeouts and Cancellation](#timeouts-and-cancellation)
     - [Debugging](#debugging)
   - [Concurrency Utilities](#concurrency-utilities)
@@ -31,24 +33,31 @@ bundle install
 
 ## Usage
 
-### Ori::Scope
+### Defining Boundaries
 
-The core of Ori is the `Ori::Scope`, which provides a controlled environment for running fibers and managing their lifecycle.
+The core of Ori is the concurrency boundary, which provides a controlled environment for running fibers and managing their lifecycle. `Ori::Scope.boundary(&block)` is how you define a boundary, and will ensure all fibers within the boundary complete when the scope is closed, before continuing execution.
+
+Within a boundary, you can use `Ori::Scope#fork(&block)` to run a new fiber. The fiber will run concurrently with other fibers in the boundary, and will be cancelled when the boundary is closed. If `#fork` isn't used, the code inside the boundary will run synchronously.
+
+`Fiber.schedule(&block)`, provided by Ruby, is effectively identical to `#fork`, with the only difference being that `Ori::Scope#fork` can assign a new fiber to a parent scope, rather than only the active scope.
 
 ```ruby
 Ori::Scope.boundary do |scope|
-  # Your concurrent code here
+  # This runs in a new fiber
   scope.fork do
-    # This runs in a new fiber
     sleep 1
     puts "Hello from fiber!"
   end
-  # Multiple fibers can run concurrently
+
+  # This doesn't wait for the first fiber to complete
   scope.fork do
     sleep 0.5
     puts "Another fiber here!"
   end
-end # Waits for all fibers to complete
+end
+
+ # Waits for all fibers to complete before continuing execution
+ print "Success!"
 ```
 
 <details>
@@ -59,7 +68,7 @@ end # Waits for all fibers to complete
 
 #### Timeouts and Cancellation
 
-You can also use `Ori::Scope.boundary` with timeouts to automatically cancel or raise after a specified duration. When using `cancel_after`, the scope will be cancelled but the boundary call will return normally. With `raise_after`, a `Ori::Scope::CancellationError` will be raised after the specified duration. Both options will properly clean up any running fibers.
+You can also use `Ori::Scope.boundary` with timeouts to automatically cancel or raise after a specified duration. When using `cancel_after(seconds)`, the scope will be cancelled but the boundary call will return normally. With `raise_after(seconds)`, a `Ori::Scope::CancellationError` will be raised after the specified duration. Both options will properly clean up any running fibers.
 
 Nested cancellation scopes are fully supported - a parent scope's deadline will be inherited by child scopes, and cancelling a parent scope will cancel all child scopes:
 

@@ -179,13 +179,13 @@ Ori comes with several utilities to help you build concurrent applications. Keep
 
 #### `Ori::Promise`
 
-Promises represent values that may not be immediately available. They're perfect for handling asynchronous operations.
+Promises represent values that may not be immediately available:
 
 ```ruby
 Ori::Scope.boundary do |scope|
   promise = Ori::Promise.new
   scope.fork do
-    sleep 1
+    sleep(1)
     promise.resolve("Hello from the future!")
   end
   # Wait for the promise to be fulfilled
@@ -202,21 +202,20 @@ end
 
 #### `Ori::Channel`
 
-Channels provide a way to communicate between fibers by passing values between them:
+Channels provide a way to communicate between fibers by passing values between them. Channels can buffer up to a specified number of items. When the channel is full, `put`/`<<` will block until there is room:
 
 ```ruby
 Ori::Scope.boundary do |scope|
-  channel = Ori::Channel.new(5)
+  channel = Ori::Channel.new(2)
   # Producer
   scope.fork do
+    # Will block after the first two puts
     5.times { |i| channel << i }
   end
 
   # Consumer
   scope.fork do
-    5.times do
-      puts "Received: #{channel.take}"
-    end
+    5.times { puts "Received: #{channel.take}" }
   end
 end
 ```
@@ -226,15 +225,6 @@ end
 
 ![Trace visualization](./docs/images/example_channel.png)
 </details>
-
-Channels can be bounded to limit the number of items they can hold. When the channel is full, `put`/`<<` will block until there is room:
-
-```ruby
-channel = Ori::Channel.new(2)
-scope.fork do
-  5.times { |i| channel << i } # Will block after the first two puts
-end
-```
 
 If a channel has a capacity of `0`, it becomes a simple synchronous queue:
 
@@ -248,19 +238,51 @@ channel << 1 # Will block until `take` is called
 When you need to enforce a critical section with strict ordering, use a mutex:
 
 ```ruby
-Ori::Scope.boundary do |scope|
+ result = []
+
+closed_scope = Ori::Scope.boundary do |scope|
   mutex = Ori::Mutex.new
   counter = 0
-  5.times do
-    scope.fork do
-      mutex.synchronize do
-        current = counter
-        sleep 0.1 # Simulate work
-        counter = current + 1
-      end
+
+  scope.fork do
+    mutex.synchronize do
+      current = counter
+      result << [:read, current]
+      Fiber.yield # Simulate work
+      counter = current + 1
+      result << [:write, counter]
+    end
+  end
+
+  scope.fork do
+    mutex.synchronize do
+      current = counter
+      result << [:read, current]
+      counter = current + 1
+      result << [:write, counter]
     end
   end
 end
+
+result.each { |r| puts r.inspect }
+```
+
+**Output:**
+
+```
+[:read, 0]
+[:write, 1]
+[:read, 1]
+[:write, 2]
+```
+
+Without a mutex, the `counter` variable would be read and written in an interleaved manner, leading to race conditions where both fibers read `0`:
+
+```
+[:read, 0]
+[:read, 0]
+[:write, 1]
+[:write, 1]
 ```
 
 <details>

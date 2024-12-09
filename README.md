@@ -68,6 +68,12 @@ Hello from fiber!
 Success!
 ```
 
+<details>
+<summary>See trace visualization</summary>
+
+![Trace visualization](./docs/images/example_boundary.png)
+</details>
+
 As a convenience, `Ori::Scope` provides a `#fork_each` method that will fork a new fiber for each item in the enumerable. This can be useful for performing concurrent operations on a collection.
 
 The following code contains six seconds of `sleep` time, but will take only ~1 second to execute due to the interleaving of the fibers:
@@ -87,12 +93,6 @@ Ori::Scope.boundary do |scope|
   end
 end
 ```
-
-<details>
-<summary>See trace visualization</summary>
-
-![Trace visualization](./docs/images/example_boundary.png)
-</details>
 
 #### Timeouts and Cancellation
 

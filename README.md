@@ -22,13 +22,19 @@ Due to Ruby's GIL (Global Interpreter Lock), CRuby is unable to take advantage o
 ## Installation
 
 ```ruby
-gem "ori"
+gem "shopify-ori", "~> 0.1.2"
 ```
 
 Then execute:
 
 ```sh
 bundle install
+```
+
+In your Ruby code, you can then require the library:
+
+```ruby
+require "ori"
 ```
 
 ## Usage
@@ -298,7 +304,7 @@ Semaphors are a generalized form of mutexes that can be used to control access t
 Ori::Scope.boundary do |scope|
   # Allow up to 3 concurrent operations
   semaphore = Ori::Semaphore.new(3)
-  
+
   10.times do |i|
     scope.fork do
       semaphore.synchronize do

@@ -56,8 +56,36 @@ Ori::Scope.boundary do |scope|
   end
 end
 
- # Waits for all fibers to complete before continuing execution
- print "Success!"
+ # Boundary blocks until all fibers complete
+ puts "Success!"
+```
+
+**Output:**
+
+```
+Another fiber here!
+Hello from fiber!
+Success!
+```
+
+As a convenience, `Ori::Scope` provides a `#fork_each` method that will fork a new fiber for each item in the enumerable. This can be useful for performing concurrent operations on a collection.
+
+The following code contains six seconds of `sleep` time, but will take only ~1 second to execute due to the interleaving of the fibers:
+
+```ruby
+Ori::Scope.boundary do |scope|
+  # Spawns a new fiber for each item in the array
+  scope.fork_each([1, 2, 3]) do |item|
+    puts "Processing #{item}"
+    sleep(1)
+  end
+
+  # Any Enumerable can be used
+  scope.fork_each(3.times) do |i|
+    puts "Processing #{i}"
+    sleep(1)
+  end
+end
 ```
 
 <details>
@@ -123,14 +151,31 @@ Legend: (█ Start) (▒ Finish) (═ Running) (~ IO-Wait) (. Sleeping) (╎ Yie
 
 #### `Ori::Scope#write_html_trace(directory)`
 
-`Ori::Scope#write_html_trace` will generate an `index.html` file in the specified directory containing a fully interactive timeline of the scope's execution.
+`Ori::Scope#write_html_trace` will generate an `index.html` file in the specified directory containing a fully interactive timeline of the scope's execution. 
+
+![Trace visualization](./docs/images/example_trace.png)
+
+`#write_html_trace` also supports use of `Ori::Scope#tag` to add custom labels to the trace.
 
 ```ruby
-closed_scope = Ori::Scope.boundary { ... }
+closed_scope = Ori::Scope.boundary do |scope|
+  scope.fork do
+    scope.tag("Going to sleep")
+    sleep(0.0001)
+    scope.tag("Woke up")
+  end
+  scope.fork do
+    scope.tag("Not sure what to do")
+    Fiber.yield
+    scope.tag("Finished yielding")
+  end
+  scope.tag("Finished queueing work")
+end
+
 closed_scope.write_html_trace(File.join(__dir_, "out"))
 ```
 
-![Trace visualization](./docs/images/example_trace.png)
+![Trace visualization](./docs/images/example_trace_tag.png)
 
 ### Concurrency Utilities
 

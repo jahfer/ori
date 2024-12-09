@@ -246,19 +246,19 @@ Ori::Scope.boundary do |scope|
   scope.fork do
     mutex.synchronize do
       current = counter
-      result << [:read, current]
+      result << [:A, :read, current]
       Fiber.yield # Simulate work
       counter = current + 1
-      result << [:write, counter]
+      result << [:A, :write, counter]
     end
   end
 
   scope.fork do
     mutex.synchronize do
       current = counter
-      result << [:read, current]
+      result << [:B, :read, current]
       counter = current + 1
-      result << [:write, counter]
+      result << [:B, :write, counter]
     end
   end
 end
@@ -269,19 +269,19 @@ result.each { |r| puts r.inspect }
 **Output:**
 
 ```
-[:read, 0]
-[:write, 1]
-[:read, 1]
-[:write, 2]
+[:A, :read, 0]
+[:A, :write, 1]
+[:B, :read, 1]
+[:B, :write, 2]
 ```
 
 Without a mutex, the `counter` variable would be read and written in an interleaved manner, leading to race conditions where both fibers read `0`:
 
 ```
-[:read, 0]
-[:read, 0]
-[:write, 1]
-[:write, 1]
+[:A, :read, 0]
+[:B, :read, 0]
+[:B, :write, 1]
+[:A, :write, 1]
 ```
 
 <details>

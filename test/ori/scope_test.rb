@@ -6,8 +6,8 @@ require "test_helper"
 module Ori
   class ScopeTest < Minitest::Test
     def test_basic_boundary
-      result = nil
-      captured_scope = nil
+      result = T.let(nil, T.nilable(String))
+      captured_scope = T.let(nil, T.nilable(Scope))
 
       Scope.boundary do |scope|
         captured_scope = scope
@@ -15,12 +15,12 @@ module Ori
       end
 
       assert_equal("executed", result)
-      assert(captured_scope.closed?)
+      assert(captured_scope&.closed?)
     end
 
     def test_nested_scopes
-      outer_scope = nil
-      inner_scope = nil
+      outer_scope = T.let(nil, T.nilable(Scope))
+      inner_scope = T.let(nil, T.nilable(Scope))
 
       Scope.boundary do |s1|
         outer_scope = s1
@@ -29,7 +29,7 @@ module Ori
         end
       end
 
-      assert_equal(outer_scope.scope_id, inner_scope.parent_scope.scope_id)
+      assert_equal(outer_scope&.scope_id, inner_scope&.parent_scope&.scope_id)
     end
 
     def test_fork_execution
@@ -56,7 +56,7 @@ module Ori
     def test_io_operations
       reader, writer = IO.pipe
       message = "hello"
-      received = nil
+      received = T.let(nil, T.nilable(String))
 
       Scope.boundary do |s|
         s.fork do
@@ -72,7 +72,7 @@ module Ori
 
       assert_equal(message, received)
     ensure
-      [reader, writer].each { |io| io.close unless io.closed? }
+      [reader, writer].each { |io| io&.close }
     end
 
     def test_deterministic_execution_order
@@ -127,7 +127,7 @@ module Ori
     end
 
     def test_cancel_after_timeout
-      result = nil
+      result = T.let(nil, T.nilable(String))
       Scope.boundary(cancel_after: 0.1) do |s|
         s.fork do
           result = "A"
@@ -167,7 +167,7 @@ module Ori
     end
 
     def test_timeout_doesnt_affect_completed_operations
-      result = nil
+      result = T.let(nil, T.nilable(String))
 
       Scope.boundary(cancel_after: 0.1) do |s|
         s.fork do

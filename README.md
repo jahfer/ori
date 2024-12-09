@@ -128,8 +128,6 @@ end
 
 To help understand your program, Ori comes with several utilities to help you visualize the execution of your program.
 
-#### `Ori::Scope#print_ascii_trace`
-
 `Ori::Scope#print_ascii_trace` will print the trace to stdout in plaintext. While useful as a quick overview, it's not interactive and the level of detail is limited. 
 
 ```ruby
@@ -149,9 +147,7 @@ Fiber 3    |        █▶╎--▶╎----------------------▶╎---------------
 Legend: (█ Start) (▒ Finish) (═ Running) (~ IO-Wait) (. Sleeping) (╎ Yield) (✗ Error)
 ```
 
-#### `Ori::Scope#write_html_trace(directory)`
-
-`Ori::Scope#write_html_trace` will generate an `index.html` file in the specified directory containing a fully interactive timeline of the scope's execution. 
+`Ori::Scope#write_html_trace(dir)` will generate an `index.html` file in the specified directory containing a fully interactive timeline of the scope's execution. 
 
 ![Trace visualization](./docs/images/example_trace.png)
 

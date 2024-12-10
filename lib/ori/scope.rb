@@ -143,7 +143,13 @@ module Ori
     alias_method :fork, :fiber
 
     def fork_each(enumerable)
+      return enum_for(:fork_each, enumerable) unless block_given?
+
       enumerable.each { |item| fork { yield(item) } }
+    end
+
+    def select(awaits)
+      # TODO
     end
 
     def next_id
@@ -307,28 +313,43 @@ module Ori
       @deadline_owner = self
     end
 
-    def check_deadline
-      return unless @deadline_at
+    def cancel!(cause = nil)
+      return if @cancelled
 
-      if current_time >= @deadline_at
-        error = CancellationError.new(@deadline_owner)
-        cancel!(error)
-        raise error
+      @cancelled = true
+      @cancel_reason = cause
+      cancellation_error = cause.is_a?(CancellationError) ? cause : CancellationError.new(self, cause)
+
+      @tracer.record_scope(@scope_id, :cancelling, cancellation_error.message)
+
+      @child_scopes.each do |scope|
+        scope.cancel!(cause)
       end
+
+      @pending.each do |fiber|
+        cancel_fiber(fiber, cancellation_error)
+      end
+
+      @waiting.each do |fiber, _|
+        cancel_fiber(fiber, cancellation_error)
+      end
+
+      @sleeping.each do |fiber, _|
+        cancel_fiber(fiber, cancellation_error)
+      end
+
+      cleanup_io_resources
+
+      @tracer.record_scope(@scope_id, :cancelled)
     end
+
+    protected
 
     def remaining_deadline
       return unless @deadline_at
 
       remaining = @deadline_at - current_time
       remaining.positive? ? remaining : 0
-    end
-
-    protected
-
-    def close_scope
-      @closed = true
-      @tracer.record_scope(@scope_id, :closed)
     end
 
     def pending_work?
@@ -339,7 +360,7 @@ module Ori
         @waiting.any? { |fiber, _| fiber.alive? } ||
         @sleeping.any? { |fiber, _| fiber.alive? } ||
         @pending.any?(&:alive?) ||
-        @child_scopes.any?(&:pending_work?)
+        @child_scopes.any? { |scope| scope.pending_work? } # rubocop:disable Style/SymbolProc
     end
 
     def register_child_scope(scope)
@@ -348,6 +369,13 @@ module Ori
 
     def deregister_child_scope(scope)
       @child_scopes.delete(scope)
+    end
+
+    private
+
+    def close_scope
+      @closed = true
+      @tracer.record_scope(@scope_id, :closed)
     end
 
     def process_available_work
@@ -389,37 +417,15 @@ module Ori
       handle_timeouts(current_time)
     end
 
-    def cancel!(cause = nil)
-      return if @cancelled
+    def check_deadline
+      return unless @deadline_at
 
-      @cancelled = true
-      @cancel_reason = cause
-      cancellation_error = cause.is_a?(CancellationError) ? cause : CancellationError.new(self, cause)
-
-      @tracer.record_scope(@scope_id, :cancelling, cancellation_error.message)
-
-      @child_scopes.each do |scope|
-        scope.cancel!(cause)
+      if current_time >= @deadline_at
+        error = CancellationError.new(@deadline_owner)
+        cancel!(error)
+        raise error
       end
-
-      @pending.each do |fiber|
-        cancel_fiber(fiber, cancellation_error)
-      end
-
-      @waiting.each do |fiber, _|
-        cancel_fiber(fiber, cancellation_error)
-      end
-
-      @sleeping.each do |fiber, _|
-        cancel_fiber(fiber, cancellation_error)
-      end
-
-      cleanup_io_resources
-
-      @tracer.record_scope(@scope_id, :cancelled)
     end
-
-    private
 
     def cancel_fiber(fiber, error)
       return unless fiber.alive?

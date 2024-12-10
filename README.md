@@ -1,6 +1,6 @@
 # Ori
 
-Ori is a concurrency library for Ruby that provides a robust set of primitives for building concurrent applications. The name comes from the Japanese word 折り "ori" meaning "fold", reflecting how concurrent operations interleave.
+Ori is a library for Ruby that provides a robust set of primitives for building concurrent applications. The name comes from the Japanese word 折り "ori" meaning "fold", reflecting how concurrent operations interleave.
 
 Due to Ruby's GIL (Global Interpreter Lock), CRuby is unable to take advantage of a multi-threaded environment in the way that other languages do. Ori provides a set of primitives that allow you to build concurrent applications—that is, applications that interleave execution within a single thread—without blocking the entire Ruby interpreter for each task.
 
@@ -9,6 +9,7 @@ Due to Ruby's GIL (Global Interpreter Lock), CRuby is unable to take advantage o
 - [Installation](#installation)
 - [Usage](#usage)
   - [Defining Boundaries](#defining-boundaries)
+    - [Matching](#matching)
     - [Timeouts and Cancellation](#timeouts-and-cancellation)
     - [Debugging](#debugging)
   - [Concurrency Utilities](#concurrency-utilities)
@@ -97,6 +98,25 @@ Ori::Scope.boundary do |scope|
     puts "Processing #{i}"
     sleep(1)
   end
+end
+```
+
+#### Matching
+
+If you have a set of blocking resources, you can use `Ori::Select` to wait on them concurrently. `Ori::Select` will return the first resource to complete, and cancel waiting for the others.
+
+```ruby
+promise = Ori::Promise.new
+mutex = Ori::Mutex.new
+channel = Ori::Channel.new(1)
+
+case Ori::Select.from([promise, mutex, channel])
+in ^promise, value
+  puts "Promise: #{value}"
+in ^mutex, value
+  puts "Mutex: #{value}"
+in ^channel, value
+  puts "Channel: #{value}"
 end
 ```
 

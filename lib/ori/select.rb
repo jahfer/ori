@@ -1,6 +1,8 @@
 # typed: false
 # frozen_string_literal: true
 
+require "ori/channel"
+
 module Ori
   class Select
     class << self
@@ -9,25 +11,27 @@ module Ori
       end
     end
 
-    def initialize(awaits)
-      @awaits = awaits
+    def initialize(resources)
+      @resources = resources
     end
 
     def await
       winner = Promise.new
 
       Ori::Scope.boundary do |scope|
-        scope.fork_each(@awaits) do |await|
-          case await
-          when Promise
-            winner.resolve([await, await.await])
-          when BaseChannel
-            winner.resolve([await, await.take])
-          when Semaphore
-            Fiber.yield until await.available?
-            winner.resolve(await)
+        scope.fork_each(@resources) do |resource|
+          case resource
+          when Ori::Timeout
+            winner.resolve(resource) if resource.await
+          when Ori::Promise
+            winner.resolve([resource, resource.await])
+          when Ori::BaseChannel
+            winner.resolve([resource, resource.take])
+          when Ori::Semaphore
+            Fiber.yield until resource.available?
+            winner.resolve(resource)
           else
-            raise "Unsupported await type: #{await.class}"
+            raise "Unsupported await type: #{resource.class}"
           end
 
           scope.cancel!

@@ -379,7 +379,7 @@ module Ori
     end
 
     def process_available_work
-      @tracer.record_scope(@scope_id, :awaiting)
+      # @tracer.record_scope(@scope_id, :awaiting)
 
       check_deadline
       cleanup_dead_fibers
@@ -393,12 +393,14 @@ module Ori
         resume_fiber(fiber)
       end
 
-      readable, writable = IO.select(
-        @readable.keys,
-        @writable.keys,
-        [],
-        next_timeout,
-      )
+      if @readable.any? || @writable.any?
+        readable, writable = IO.select(
+          @readable.keys,
+          @writable.keys,
+          [],
+          next_timeout,
+        )
+      end
 
       # Handle readable IOs
       readable&.each do |io|
@@ -536,7 +538,7 @@ module Ori
       return unless fiber.alive?
 
       id = @fiber_ids[fiber]
-      @tracer.record(id, :resuming)
+      # @tracer.record(id, :resuming)
 
       begin
         # TODO: Unnecessary?
@@ -548,10 +550,10 @@ module Ori
         fiber.resume
         if fiber.alive?
           @pending << fiber
-          @tracer.record(id, :yielded)
+          # @tracer.record(id, :yielded)
         end
-      rescue CancellationError => e
-        @tracer.record(id, :cancelled, e.message)
+      rescue CancellationError => error
+        @tracer.record(id, :cancelled, error.message)
         fiber.kill
       rescue => error
         @tracer.record(id, :error, error.message)

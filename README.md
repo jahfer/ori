@@ -109,14 +109,17 @@ If you have a set of blocking resources, you can use `Ori::Select` to wait on th
 promise = Ori::Promise.new
 mutex = Ori::Mutex.new
 channel = Ori::Channel.new(1)
+timeout = Ori::Timeout.new(0.1) # stop after 100ms if no resource completes
 
-case Ori::Select.from([promise, mutex, channel])
+case Ori::Select.from([promise, mutex, channel, timeout])
 in ^promise, value
   puts "Promise: #{value}"
 in ^mutex
   mutex.synchronize { puts "Mutex acquired!" }
 in ^channel, value
   puts "Channel: #{value}"
+in Ori::Timeout
+  puts "Timeout!"
 end
 ```
 

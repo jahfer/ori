@@ -1,7 +1,6 @@
 # typed: false
 # frozen_string_literal: true
 
-require "debug"
 require "test_helper"
 
 module Ori
@@ -61,6 +60,26 @@ module Ori
       end
 
       assert_equal(:promise_a, result)
+    end
+
+    def test_select_with_timeout
+      promise = Promise.new
+      timeout = Timeout.new(0.1)
+      result = nil
+
+      Ori::Scope.boundary do |scope|
+        scope.fork do
+          sleep(0.2)
+          promise.resolve(:promise)
+        end
+
+        result = case Select.from([timeout, promise])
+        in ^promise, _value then raise "Should not happen"
+        in Timeout then :timeout
+        end
+      end
+
+      assert_equal(:timeout, result)
     end
   end
 end

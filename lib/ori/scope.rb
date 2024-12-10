@@ -92,7 +92,6 @@ module Ori
       @readable = Hash.new { |h, k| h[k] = Set.new }
       @writable = Hash.new { |h, k| h[k] = Set.new }
       @waiting = {}
-      @sleeping = {}
 
       @tracer.record_scope(@scope_id, :opened)
 
@@ -161,7 +160,7 @@ module Ori
       end
     ensure
       cleanup_io_wait(fiber, io, added)
-      @waiting.delete(fiber) if timeout
+      cleanup_timeout(fiber) if timeout
     end
 
     def io_select(readables, writables, exceptables, timeout)
@@ -219,11 +218,10 @@ module Ori
 
       if duration > 0
         register_timeout(fiber, duration)
-        @sleeping[fiber] = current_time + duration
         Fiber.yield
       end
     ensure
-      @sleeping.delete(fiber)
+      cleanup_timeout(fiber)
     end
 
     def block(...)
@@ -276,10 +274,6 @@ module Ori
         cancel_fiber(fiber, cancellation_error)
       end
 
-      @sleeping.each do |fiber, _|
-        cancel_fiber(fiber, cancellation_error)
-      end
-
       cleanup_io_resources
 
       @tracer.record_scope(@scope_id, :cancelled)
@@ -300,7 +294,6 @@ module Ori
       @readable.values.any? { |fibers| fibers.any?(&:alive?) } ||
         @writable.values.any? { |fibers| fibers.any?(&:alive?) } ||
         @waiting.any? { |fiber, _| fiber.alive? } ||
-        @sleeping.any? { |fiber, _| fiber.alive? } ||
         @pending.any?(&:alive?) ||
         @child_scopes.any? { |scope| scope.pending_work? } # rubocop:disable Style/SymbolProc
     end
@@ -334,7 +327,7 @@ module Ori
       @pending = []
 
       fibers.each do |fiber|
-        next if @sleeping.key?(fiber)
+        next if @waiting.key?(fiber)
 
         resume_fiber(fiber)
       end
@@ -393,7 +386,6 @@ module Ori
       @writable.delete_if { |_, fibers| fibers.empty? }
 
       @waiting.delete_if { |fiber, _| !fiber.alive? }
-      @sleeping.delete_if { |fiber, _| !fiber.alive? }
 
       dead_fibers.each { |fiber| @fiber_ids.delete(fiber) }
     end
@@ -412,31 +404,13 @@ module Ori
         @waiting.delete(fiber)
         resume_fiber(fiber)
       end
-
-      fibers_to_resume = []
-      @sleeping.each_key do |fiber|
-        deadline = @sleeping[fiber]
-        next if deadline.nil?
-
-        if deadline <= now
-          fibers_to_resume << fiber
-        end
-      end
-
-      fibers_to_resume.each do |fiber|
-        @sleeping.delete(fiber)
-        resume_fiber(fiber)
-      end
     end
 
     def next_timeout
       timeouts = T.let([], T::Array[Numeric])
 
-      # Add IO wait timeouts
-      timeouts.concat(@waiting.values) unless @waiting.empty?
-
-      # Add sleep timeouts (excluding nil values for indefinite sleeps)
-      timeouts.concat(@sleeping.values.compact) unless @sleeping.empty?
+      # Add IO wait + sleep timeouts
+      timeouts.concat(@waiting.values.compact) unless @waiting.empty?
 
       # Add deadline timeout if one exists
       timeouts << @deadline_at if @deadline_at
@@ -540,6 +514,10 @@ module Ori
 
       @readable.delete(io) if @readable[io]&.empty?
       @writable.delete(io) if @writable[io]&.empty?
+    end
+
+    def cleanup_timeout(fiber)
+      @waiting.delete(fiber)
     end
   end
 end

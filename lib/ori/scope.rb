@@ -17,16 +17,17 @@ module Ori
 
     class << self
       def boundary(name: nil, cancel_after: nil, raise_after: nil, &block)
-        old_scheduler = Fiber.current_scheduler
-        nested_scope = old_scheduler.is_a?(Scope)
+        prev_scheduler = Fiber.current_scheduler
+        nested_scope = prev_scheduler.is_a?(Scope)
         scope = if nested_scope
-          Scope.new(old_scheduler, name: name)
+          Scope.new(prev_scheduler, name: name)
         else
           Scope.new(name: name)
         end
 
         # Set timeout if specified
-        scope.deadline(cancel_after || raise_after) if cancel_after || raise_after
+        deadline = cancel_after || raise_after
+        scope.deadline(deadline) if deadline
 
         Fiber.set_scheduler(scope)
 
@@ -47,7 +48,7 @@ module Ori
 
           scope # Return the scope even when cancelled
         ensure
-          Fiber.set_scheduler(old_scheduler)
+          Fiber.set_scheduler(prev_scheduler)
         end
       end
     end
@@ -81,7 +82,6 @@ module Ori
         parent_scope.fiber_ids[Fiber.current]
       end
 
-      # Register this scope with the tracer, now passing the name
       @tracer.register_scope(@scope_id, parent_scope&.scope_id, creating_fiber_id, name: @name)
 
       @pending = []
@@ -98,7 +98,6 @@ module Ori
 
       @child_scopes = Set.new
 
-      # If we have a parent scope, register ourselves with it
       @parent_scope&.register_child_scope(self)
     end
 
@@ -115,14 +114,12 @@ module Ori
     end
 
     def await
-      # RubyLogger.debug("await: starting event loop")
       while pending_work?
         process_available_work
         Fiber.yield if parent_scope && pending_work?
       end
     ensure
       close_scope
-      # Deregister from parent when done
       @parent_scope&.deregister_child_scope(self)
     end
 
@@ -148,56 +145,38 @@ module Ori
       enumerable.each { |item| fork { yield(item) } }
     end
 
-    def select(awaits)
-      # TODO
-    end
-
     def next_id
       Random.uuid_v7(extra_timestamp_bits: 12)
     end
 
-    # Fiber::Scheduler hooks
-
-    # This hook is invoked by `IO#read` and `IO#write` in the case that `io_read`
-    # and `io_write` hooks are not available. This implementation is not
-    # completely general, in the sense that calling `io_wait` multiple times with
-    # the same `io` and `events` will not work, which is okay for tests but not
-    # for real code. Correct fiber schedulers should not have this limitation.
     def io_wait(io, events, timeout = nil)
       unless @fiber_ids.key?(Fiber.current)
         return @parent_scope.io_wait(io, events, timeout)
       end
 
-      # RubyLogger.debug("io_wait: #{io}, #{events}, #{timeout}")
       fiber = Fiber.current
       id = @fiber_ids[fiber]
 
       @tracer.record(id, :waiting_io, "#{io.inspect}:#{events}")
 
-      # Track if we added to readable/writable for cleanup
       added_readable = false
       added_writable = false
 
-      # Check for readable events
       if (events & IO::READABLE).nonzero?
         @readable[io].add(fiber)
         added_readable = true
       end
 
-      # Check for writable events
       if (events & IO::WRITABLE).nonzero?
         @writable[io].add(fiber)
         added_writable = true
       end
 
-      # Handle timeout
       if timeout
         @waiting[fiber] = current_time + timeout
       end
 
       Fiber.yield
-
-      # RubyLogger.debug("io_wait: #{io}, #{events}, #{timeout} - resuming")
 
       if added_readable && added_writable
         IO::READABLE | IO::WRITABLE
@@ -221,8 +200,6 @@ module Ori
       unless @fiber_ids.key?(Fiber.current)
         return @parent_scope.io_select(readables, writables, exceptables, timeout)
       end
-
-      # RubyLogger.debug("io_select: #{readables}, #{writables}, #{exceptables}, #{timeout}")
 
       selector = NIO::Selector.new
 
@@ -261,12 +238,15 @@ module Ori
     # def io_pread(...) = ()
     # def io_pwrite(...) = ()
 
+    # def process_wait(...) = ()
+    # def timeout_after(...) = ()
+    # def address_resolve(...) = ()
+
     def kernel_sleep(duration)
       unless @fiber_ids.key?(Fiber.current)
         return @parent_scope.kernel_sleep(duration)
       end
 
-      # RubyLogger.debug("kernel_sleep: #{duration}")
       fiber = Fiber.current
       id = @fiber_ids[fiber]
 
@@ -276,13 +256,7 @@ module Ori
         @sleeping[fiber] = current_time + duration
         Fiber.yield
       end
-
-      # RubyLogger.debug("kernel_sleep: #{duration} - resuming")
     end
-
-    # def process_wait(...) = ()
-    # def timeout_after(...) = ()
-    # def address_resolve(...) = ()
 
     def block(...)
       unless @fiber_ids.key?(Fiber.current)
@@ -384,7 +358,6 @@ module Ori
       check_deadline
       cleanup_dead_fibers
 
-      # Process pending fibers, skipping sleeping ones
       fibers_to_process = @pending
       @pending = []
       fibers_to_process.each do |fiber|
@@ -402,14 +375,12 @@ module Ori
         )
       end
 
-      # Handle readable IOs
       readable&.each do |io|
         @readable[io].each do |fiber|
           resume_fiber(fiber)
         end
       end
 
-      # Handle writable IOs
       writable&.each do |io|
         @writable[io].each do |fiber|
           resume_fiber(fiber)
@@ -433,7 +404,6 @@ module Ori
       return unless fiber.alive?
 
       id = @fiber_ids[fiber]
-      # RubyLogger.error("Cancelling fiber #{id}")
       @tracer.record(id, :cancelling, error.message)
 
       begin
@@ -479,7 +449,6 @@ module Ori
       fibers_to_resume = []
       @sleeping.each_key do |fiber|
         deadline = @sleeping[fiber]
-        # RubyLogger.debug("handle_timeouts: sleeping deadline: #{deadline}")
         next if deadline.nil?
 
         if deadline <= now
@@ -488,7 +457,6 @@ module Ori
       end
 
       fibers_to_resume.each do |fiber|
-        # RubyLogger.debug("handle_timeouts: resuming sleeping fiber")
         @sleeping.delete(fiber)
         resume_fiber(fiber)
       end
@@ -544,9 +512,6 @@ module Ori
         # TODO: Unnecessary?
         raise CancellationError.new(self, @cancel_reason) if @cancelled
 
-        if Fiber.current == fiber
-          # RubyLogger.warn("Resuming fiber #{id} that is the current fiber")
-        end
         fiber.resume
         if fiber.alive?
           @pending << fiber
@@ -557,7 +522,6 @@ module Ori
         fiber.kill
       rescue => error
         @tracer.record(id, :error, error.message)
-        # RubyLogger.error("Error in fiber #{id}: [#{error.class}] #{error.message}")
         cancel!(error)
         raise error
       end

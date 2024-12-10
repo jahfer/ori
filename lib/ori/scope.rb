@@ -9,7 +9,7 @@ module Ori
     class CancellationError < StandardError
       attr_reader :scope
 
-      def initialize(scope, message = "Operation timed out")
+      def initialize(scope, message = "Scope cancelled")
         @scope = scope
         super(message)
       end
@@ -127,7 +127,7 @@ module Ori
     end
 
     def fiber(&block)
-      raise CancellationError, @cancel_reason if @cancelled
+      raise CancellationError.new(self, @cancel_reason) if @cancelled
       raise "Scope is closed" if closed?
 
       id = next_id
@@ -286,7 +286,7 @@ module Ori
 
     def block(...)
       unless @fiber_ids.key?(Fiber.current)
-        return @parent_scope.block(...)
+        return @parent_scope.block(...) if @parent_scope
       end
 
       Fiber.yield
@@ -294,7 +294,7 @@ module Ori
 
     def unblock(blocker, fiber)
       unless @fiber_ids.key?(Fiber.current)
-        return @parent_scope.unblock(blocker, fiber)
+        return @parent_scope.unblock(blocker, fiber) if @parent_scope
       end
 
       resume_fiber(fiber)
@@ -540,7 +540,7 @@ module Ori
 
       begin
         # TODO: Unnecessary?
-        raise CancellationError, @cancel_reason if @cancelled
+        raise CancellationError.new(self, @cancel_reason) if @cancelled
 
         if Fiber.current == fiber
           # RubyLogger.warn("Resuming fiber #{id} that is the current fiber")

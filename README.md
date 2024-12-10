@@ -113,16 +113,12 @@ channel = Ori::Channel.new(1)
 case Ori::Select.from([promise, mutex, channel])
 in ^promise, value
   puts "Promise: #{value}"
-in ^mutex, value
-  puts "Mutex: #{value}"
-  mutex.release
+in ^mutex
+  mutex.synchronize { puts "Mutex acquired!" }
 in ^channel, value
   puts "Channel: #{value}"
 end
 ```
-
-> [!WARNING]
-> Matching on an [`Ori::Mutex`](#orimutex) or [`Ori::Semaphore`](#orisemaphore) is risky, as `Ori::Select` will acquire the internal lock on success, and it is then up to the caller to release it. If `#release` is not called, the semaphore will remain acquired, causing any other fibers waiting for it to deadlock.
 
 You can also write the case statement using class names if you don't need to identify the specific resource:
 
@@ -130,9 +126,8 @@ You can also write the case statement using class names if you don't need to ide
 case Ori::Select.from([promise, mutex, channel])
 in Ori::Promise, value
   puts "Promise: #{value}"
-in Ori::Mutex, value
-  puts "Mutex: #{value}"
-  mutex.release
+in Ori::Mutex
+  mutex.synchronize { puts "Mutex acquired!" }
 in Ori::Channel, value
   puts "Channel: #{value}"
 end

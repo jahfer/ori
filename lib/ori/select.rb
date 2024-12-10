@@ -5,8 +5,7 @@ module Ori
   class Select
     class << self
       def from(awaits)
-        awaiter, value = Select.new(awaits).await
-        [awaiter, value]
+        Select.new(awaits).await
       end
     end
 
@@ -25,7 +24,8 @@ module Ori
           when BaseChannel
             winner.resolve([await, await.take])
           when Semaphore
-            winner.resolve([await, await.acquire])
+            Fiber.yield until await.available?
+            winner.resolve(await)
           else
             raise "Unsupported await type: #{await.class}"
           end

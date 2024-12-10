@@ -103,7 +103,7 @@ end
 
 #### Matching
 
-If you have a set of blocking resources, you can use `Ori::Select` to wait on them concurrently. `Ori::Select` will return the first resource to complete, and cancel waiting for the others.
+If you have a set of blocking resources, you can use `Ori::Select` to wait on them concurrently. `Ori::Select` will return the first resource to complete, and cancel waiting for the others. See [Concurrency Utilities](#concurrency-utilities) for more details on these tools.
 
 ```ruby
 promise = Ori::Promise.new
@@ -115,7 +115,25 @@ in ^promise, value
   puts "Promise: #{value}"
 in ^mutex, value
   puts "Mutex: #{value}"
+  mutex.release
 in ^channel, value
+  puts "Channel: #{value}"
+end
+```
+
+> [!WARNING]
+> Matching on an [`Ori::Mutex`](#orimutex) or [`Ori::Semaphore`](#orisemaphore) is risky, as `Ori::Select` will acquire the internal lock on success, and it is then up to the caller to release it. If `#release` is not called, the semaphore will remain acquired, causing any other fibers waiting for it to deadlock.
+
+You can also write the case statement using class names if you don't need to identify the specific resource:
+
+```ruby
+case Ori::Select.from([promise, mutex, channel])
+in Ori::Promise, value
+  puts "Promise: #{value}"
+in Ori::Mutex, value
+  puts "Mutex: #{value}"
+  mutex.release
+in Ori::Channel, value
   puts "Channel: #{value}"
 end
 ```
@@ -154,13 +172,14 @@ end
 
 To help understand your program, Ori comes with several utilities to help you visualize the execution of your program.
 
+#### Plain-Text Visualization
+
 `Ori::Scope#print_ascii_trace` will print the trace to stdout in plaintext. While useful as a quick overview, it's not interactive and the level of detail is limited. 
 
 ```ruby
 closed_scope = Ori::Scope.boundary { ... }
 closed_scope.print_ascii_trace
 ```
-
 
 ```
 Fiber Execution Timeline (0.001s)
@@ -173,9 +192,13 @@ Fiber 3    |        █▶╎--▶╎----------------------▶╎---------------
 Legend: (█ Start) (▒ Finish) (═ Running) (~ IO-Wait) (. Sleeping) (╎ Yield) (✗ Error)
 ```
 
+#### HTML Visualization
+
 `Ori::Scope#write_html_trace(dir)` will generate an `index.html` file in the specified directory containing a fully interactive timeline of the scope's execution. 
 
 ![Trace visualization](./docs/images/example_trace.png)
+
+##### Tags
 
 `#write_html_trace` also supports use of `Ori::Scope#tag` to add custom labels to the trace.
 

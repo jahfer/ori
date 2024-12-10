@@ -124,18 +124,7 @@ module Ori
     end
 
     def fiber(&block)
-      raise CancellationError.new(self, @cancel_reason) if @cancelled
-      raise "Scope is closed" if closed?
-
-      id = next_id
-      f = Fiber.new(&block)
-      @fiber_ids[f] = id
-      @tracer.register_fiber(id, @scope_id)
-      @tracer.record(id, :created)
-
-      resume_fiber(f)
-
-      f
+      create_and_run_fiber(&block)
     end
     alias_method :fork, :fiber
 
@@ -150,50 +139,29 @@ module Ori
     end
 
     def io_wait(io, events, timeout = nil)
-      unless @fiber_ids.key?(Fiber.current)
-        return @parent_scope.io_wait(io, events, timeout)
-      end
+      return @parent_scope.io_wait(io, events, timeout) unless @fiber_ids.key?(Fiber.current)
 
       fiber = Fiber.current
       id = @fiber_ids[fiber]
-
       @tracer.record(id, :waiting_io, "#{io.inspect}:#{events}")
 
-      added_readable = false
-      added_writable = false
-
-      if (events & IO::READABLE).nonzero?
-        @readable[io].add(fiber)
-        added_readable = true
-      end
-
-      if (events & IO::WRITABLE).nonzero?
-        @writable[io].add(fiber)
-        added_writable = true
-      end
-
-      if timeout
-        @waiting[fiber] = current_time + timeout
-      end
+      added = register_io_wait(fiber, io, events)
+      register_timeout(fiber, timeout)
 
       Fiber.yield
 
-      if added_readable && added_writable
+      if added[:readable] && added[:writable]
         IO::READABLE | IO::WRITABLE
-      elsif added_readable
+      elsif added[:readable]
         IO::READABLE
-      elsif added_writable
+      elsif added[:writable]
         IO::WRITABLE
       else
         0
       end
     ensure
+      cleanup_io_wait(fiber, io, added)
       @waiting.delete(fiber) if timeout
-      @readable[io].delete(fiber) if added_readable
-      @writable[io].delete(fiber) if added_writable
-
-      @readable.delete(io) if @readable[io].empty?
-      @writable.delete(io) if @writable[io].empty?
     end
 
     def io_select(readables, writables, exceptables, timeout)
@@ -243,19 +211,19 @@ module Ori
     # def address_resolve(...) = ()
 
     def kernel_sleep(duration)
-      unless @fiber_ids.key?(Fiber.current)
-        return @parent_scope.kernel_sleep(duration)
-      end
+      return @parent_scope.kernel_sleep(duration) unless @fiber_ids.key?(Fiber.current)
 
       fiber = Fiber.current
       id = @fiber_ids[fiber]
-
       @tracer.record(id, :sleeping, duration)
 
       if duration > 0
+        register_timeout(fiber, duration)
         @sleeping[fiber] = current_time + duration
         Fiber.yield
       end
+    ensure
+      @sleeping.delete(fiber)
     end
 
     def block(...)
@@ -353,41 +321,40 @@ module Ori
     end
 
     def process_available_work
-      # @tracer.record_scope(@scope_id, :awaiting)
-
       check_deadline
       cleanup_dead_fibers
 
-      fibers_to_process = @pending
+      process_pending_fibers
+      process_io_operations
+      handle_timeouts(current_time)
+    end
+
+    def process_pending_fibers
+      fibers = @pending
       @pending = []
-      fibers_to_process.each do |fiber|
+
+      fibers.each do |fiber|
         next if @sleeping.key?(fiber)
 
         resume_fiber(fiber)
       end
+    end
 
-      if @readable.any? || @writable.any?
-        readable, writable = IO.select(
-          @readable.keys,
-          @writable.keys,
-          [],
-          next_timeout,
-        )
+    def process_io_operations
+      return if @readable.none? && @writable.none?
+
+      readable, writable = IO.select(@readable.keys, @writable.keys, [], next_timeout)
+
+      process_ready_io(readable, @readable)
+      process_ready_io(writable, @writable)
+    end
+
+    def process_ready_io(ready_ios, io_map)
+      return unless ready_ios
+
+      ready_ios.each do |io|
+        io_map[io].each { |fiber| resume_fiber(fiber) }
       end
-
-      readable&.each do |io|
-        @readable[io].each do |fiber|
-          resume_fiber(fiber)
-        end
-      end
-
-      writable&.each do |io|
-        @writable[io].each do |fiber|
-          resume_fiber(fiber)
-        end
-      end
-
-      handle_timeouts(current_time)
     end
 
     def check_deadline
@@ -526,6 +493,53 @@ module Ori
         raise error
       end
       @tracer.record(id, :completed) unless fiber.alive?
+    end
+
+    def create_and_run_fiber(&block)
+      raise CancellationError.new(self, @cancel_reason) if @cancelled
+      raise "Scope is closed" if closed?
+
+      id = next_id
+      fiber = Fiber.new(&block)
+      @fiber_ids[fiber] = id
+      @tracer.register_fiber(id, @scope_id)
+      @tracer.record(id, :created)
+
+      resume_fiber(fiber)
+      fiber
+    end
+
+    def register_timeout(fiber, deadline)
+      return unless deadline
+
+      @waiting[fiber] = current_time + deadline
+    end
+
+    def register_io_wait(fiber, io, events)
+      added = {
+        readable: T.let(false, T::Boolean),
+        writable: T.let(false, T::Boolean),
+      }
+
+      if (events & IO::READABLE).nonzero?
+        @readable[io].add(fiber)
+        added[:readable] = true
+      end
+
+      if (events & IO::WRITABLE).nonzero?
+        @writable[io].add(fiber)
+        added[:writable] = true
+      end
+
+      added
+    end
+
+    def cleanup_io_wait(fiber, io, added)
+      @readable[io].delete(fiber) if added[:readable]
+      @writable[io].delete(fiber) if added[:writable]
+
+      @readable.delete(io) if @readable[io]&.empty?
+      @writable.delete(io) if @writable[io]&.empty?
     end
   end
 end

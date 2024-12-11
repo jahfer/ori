@@ -53,15 +53,7 @@ module Ori
       end
     end
 
-    attr_reader :scope_id,
-      :parent_scope,
-      :fiber_ids,
-      :readable,
-      :writable,
-      :waiting,
-      :tracer,
-      :child_scopes,
-      :deadline_owner
+    attr_reader :tracer
 
     def initialize(parent_scope = nil, name: nil)
       @scope_id = Random.uuid_v7(extra_timestamp_bits: 12)
@@ -100,6 +92,32 @@ module Ori
       @parent_scope&.register_child_scope(self)
     end
 
+    # Users are not expected to call this method directly
+    # This is the event loop for an Ori::Scope instance
+    def await
+      while pending_work?
+        process_available_work
+        Fiber.yield if parent_scope && pending_work?
+      end
+    ensure
+      close_scope
+      @parent_scope&.deregister_child_scope(self)
+    end
+
+    # Public API
+
+    def fork(&block)
+      fiber(&block)
+    end
+
+    def closed? = @closed
+
+    def fork_each(enumerable)
+      return enum_for(:fork_each, enumerable) unless block_given?
+
+      enumerable.each { |item| fork { yield(item) } }
+    end
+
     def tag(name)
       @tracer.record_scope(@scope_id, :tag, name)
     end
@@ -112,29 +130,47 @@ module Ori
       @tracer.write_timeline_data(directory)
     end
 
-    def await
-      while pending_work?
-        process_available_work
-        Fiber.yield if parent_scope && pending_work?
-      end
-    ensure
-      close_scope
-      @parent_scope&.deregister_child_scope(self)
+    def deadline(duration)
+      @parent_scope&.remaining_deadline
+
+      # If we already have a deadline (inherited or set), use the shorter one
+      current_remaining = remaining_deadline
+      return if current_remaining && current_remaining < duration
+
+      @deadline_at = current_time + duration
+      @deadline_owner = self
     end
+
+    def cancel!(cause = nil)
+      return if @cancelled
+
+      @cancelled = true
+      @cancel_reason = cause
+      cancellation_error = cause.is_a?(CancellationError) ? cause : CancellationError.new(self, cause)
+
+      @tracer.record_scope(@scope_id, :cancelling, cancellation_error.message)
+
+      @child_scopes.each do |scope|
+        scope.cancel!(cause)
+      end
+
+      @pending.each do |fiber|
+        cancel_fiber!(fiber, cancellation_error)
+      end
+
+      @waiting.each do |fiber, _|
+        cancel_fiber!(fiber, cancellation_error)
+      end
+
+      cleanup_io_resources
+
+      @tracer.record_scope(@scope_id, :cancelled)
+    end
+
+    # Ruby FiberScheduler interface implementation
 
     def fiber(&block)
       create_and_run_fiber(&block)
-    end
-    alias_method :fork, :fiber
-
-    def fork_each(enumerable)
-      return enum_for(:fork_each, enumerable) unless block_given?
-
-      enumerable.each { |item| fork { yield(item) } }
-    end
-
-    def next_id
-      Random.uuid_v7(extra_timestamp_bits: 12)
     end
 
     def io_wait(io, events, timeout = nil)
@@ -201,14 +237,6 @@ module Ori
       end
     end
 
-    # def io_write(...) = ()
-    # def io_pread(...) = ()
-    # def io_pwrite(...) = ()
-
-    # def process_wait(...) = ()
-    # def timeout_after(...) = ()
-    # def address_resolve(...) = ()
-
     def kernel_sleep(duration)
       return @parent_scope.kernel_sleep(duration) unless @fiber_ids.key?(Fiber.current)
 
@@ -240,46 +268,19 @@ module Ori
       resume_fiber(fiber)
     end
 
-    def closed? = @closed
+    # def io_write(...) = ()
+    # def io_pread(...) = ()
+    # def io_pwrite(...) = ()
 
-    def deadline(duration)
-      @parent_scope&.remaining_deadline
-
-      # If we already have a deadline (inherited or set), use the shorter one
-      current_remaining = remaining_deadline
-      return if current_remaining && current_remaining < duration
-
-      @deadline_at = current_time + duration
-      @deadline_owner = self
-    end
-
-    def cancel!(cause = nil)
-      return if @cancelled
-
-      @cancelled = true
-      @cancel_reason = cause
-      cancellation_error = cause.is_a?(CancellationError) ? cause : CancellationError.new(self, cause)
-
-      @tracer.record_scope(@scope_id, :cancelling, cancellation_error.message)
-
-      @child_scopes.each do |scope|
-        scope.cancel!(cause)
-      end
-
-      @pending.each do |fiber|
-        cancel_fiber(fiber, cancellation_error)
-      end
-
-      @waiting.each do |fiber, _|
-        cancel_fiber(fiber, cancellation_error)
-      end
-
-      cleanup_io_resources
-
-      @tracer.record_scope(@scope_id, :cancelled)
-    end
+    # def process_wait(...) = ()
+    # def timeout_after(...) = ()
+    # def address_resolve(...) = ()
 
     protected
+
+    attr_reader :fiber_ids
+    attr_reader :scope_id
+    attr_reader :deadline_owner
 
     def remaining_deadline
       return unless @deadline_at
@@ -308,18 +309,21 @@ module Ori
 
     private
 
-    def close_scope
-      @closed = true
-      @tracer.record_scope(@scope_id, :closed)
-    end
+    attr_reader :parent_scope
+    attr_reader :readable
+    attr_reader :writable
+    attr_reader :waiting
+    attr_reader :child_scopes
+
+    # Scope lifecycle
 
     def process_available_work
-      check_deadline
+      check_deadline!
       cleanup_dead_fibers
 
       process_pending_fibers
       process_io_operations
-      handle_timeouts(current_time)
+      process_timeouts(current_time)
     end
 
     def process_pending_fibers
@@ -350,48 +354,19 @@ module Ori
       end
     end
 
-    def check_deadline
-      return unless @deadline_at
-
-      if current_time >= @deadline_at
-        error = CancellationError.new(@deadline_owner)
-        cancel!(error)
-        raise error
-      end
+    def close_scope
+      @closed = true
+      @tracer.record_scope(@scope_id, :closed)
     end
 
-    def cancel_fiber(fiber, error)
-      return unless fiber.alive?
+    # Timeouts and deadlines
 
-      id = @fiber_ids[fiber]
-      @tracer.record(id, :cancelling, error.message)
-
-      begin
-        fiber.raise(error)
-      rescue CancellationError => e
-        @tracer.record(id, :cancelled, e.message)
-        fiber.kill
-      end
+    def current_time
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
-    def cleanup_dead_fibers
-      dead_fibers = @fiber_ids.keys.reject(&:alive?).to_set
-      return if dead_fibers.empty?
-
-      # Clean up dead fibers from all collections
-      @readable.each_value { |fibers| fibers.subtract(dead_fibers) }
-      @readable.delete_if { |_, fibers| fibers.empty? }
-
-      @writable.each_value { |fibers| fibers.subtract(dead_fibers) }
-      @writable.delete_if { |_, fibers| fibers.empty? }
-
-      @waiting.delete_if { |fiber, _| !fiber.alive? }
-
-      dead_fibers.each { |fiber| @fiber_ids.delete(fiber) }
-    end
-
-    def handle_timeouts(now = current_time)
-      check_deadline
+    def process_timeouts(now = current_time)
+      check_deadline!
 
       fibers_to_resume = []
       @waiting.each_key do |fiber|
@@ -403,6 +378,16 @@ module Ori
       fibers_to_resume.each do |fiber|
         @waiting.delete(fiber)
         resume_fiber(fiber)
+      end
+    end
+
+    def check_deadline!
+      return unless @deadline_at
+
+      if current_time >= @deadline_at
+        error = CancellationError.new(@deadline_owner)
+        cancel!(error)
+        raise error
       end
     end
 
@@ -425,22 +410,24 @@ module Ori
       [0, delay].max
     end
 
-    def current_time
-      Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    # Fiber management
+
+    def create_and_run_fiber(&block)
+      raise CancellationError.new(self, @cancel_reason) if @cancelled
+      raise "Scope is closed" if closed?
+
+      id = generate_fiber_id
+      fiber = Fiber.new(&block)
+      @fiber_ids[fiber] = id
+      @tracer.register_fiber(id, @scope_id)
+      @tracer.record(id, :created)
+
+      resume_fiber(fiber)
+      fiber
     end
 
-    def cleanup_io_resources
-      @readable.keys.each do |io|
-        io.close unless io.closed?
-      rescue => e
-        @tracer.record_scope(@scope_id, :error, "Failed to close readable: #{e.message}")
-      end
-
-      @writable.keys.each do |io|
-        io.close unless io.closed?
-      rescue => e
-        @tracer.record_scope(@scope_id, :error, "Failed to close writable: #{e.message}")
-      end
+    def generate_fiber_id
+      Random.uuid_v7(extra_timestamp_bits: 12)
     end
 
     def resume_fiber(fiber)
@@ -469,19 +456,21 @@ module Ori
       @tracer.record(id, :completed) unless fiber.alive?
     end
 
-    def create_and_run_fiber(&block)
-      raise CancellationError.new(self, @cancel_reason) if @cancelled
-      raise "Scope is closed" if closed?
+    def cancel_fiber!(fiber, error)
+      return unless fiber.alive?
 
-      id = next_id
-      fiber = Fiber.new(&block)
-      @fiber_ids[fiber] = id
-      @tracer.register_fiber(id, @scope_id)
-      @tracer.record(id, :created)
+      id = @fiber_ids[fiber]
+      @tracer.record(id, :cancelling, error.message)
 
-      resume_fiber(fiber)
-      fiber
+      begin
+        fiber.raise(error)
+      rescue CancellationError => e
+        @tracer.record(id, :cancelled, e.message)
+        fiber.kill
+      end
     end
+
+    # Registration
 
     def register_timeout(fiber, deadline)
       return unless deadline
@@ -506,6 +495,38 @@ module Ori
       end
 
       added
+    end
+
+    # Cleanup
+
+    def cleanup_dead_fibers
+      dead_fibers = @fiber_ids.keys.reject(&:alive?).to_set
+      return if dead_fibers.empty?
+
+      # Clean up dead fibers from all collections
+      @readable.each_value { |fibers| fibers.subtract(dead_fibers) }
+      @readable.delete_if { |_, fibers| fibers.empty? }
+
+      @writable.each_value { |fibers| fibers.subtract(dead_fibers) }
+      @writable.delete_if { |_, fibers| fibers.empty? }
+
+      @waiting.delete_if { |fiber, _| !fiber.alive? }
+
+      dead_fibers.each { |fiber| @fiber_ids.delete(fiber) }
+    end
+
+    def cleanup_io_resources
+      @readable.keys.each do |io|
+        io.close unless io.closed?
+      rescue => e
+        @tracer.record_scope(@scope_id, :error, "Failed to close readable: #{e.message}")
+      end
+
+      @writable.keys.each do |io|
+        io.close unless io.closed?
+      rescue => e
+        @tracer.record_scope(@scope_id, :error, "Failed to close writable: #{e.message}")
+      end
     end
 
     def cleanup_io_wait(fiber, io, added)

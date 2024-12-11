@@ -18,20 +18,6 @@ module Ori
       assert(captured_scope&.closed?)
     end
 
-    def test_nested_scopes
-      outer_scope = T.let(nil, T.nilable(Scope))
-      inner_scope = T.let(nil, T.nilable(Scope))
-
-      Scope.boundary do |s1|
-        outer_scope = s1
-        Scope.boundary do |s2|
-          inner_scope = s2
-        end
-      end
-
-      assert_equal(outer_scope&.scope_id, inner_scope&.parent_scope&.scope_id)
-    end
-
     def test_fork_execution
       results = []
       Scope.boundary do |s|

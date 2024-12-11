@@ -51,5 +51,14 @@ module Ori
         Fiber.set_scheduler(prev_scheduler)
       end
     end
+
+    sig do
+      type_parameters(:U)
+        .params(resources: T::Array[T.type_parameter(:U)])
+        .returns(T.type_parameter(:U))
+    end
+    def select(resources)
+      Ori::Select.new(resources).await
+    end
   end
 end

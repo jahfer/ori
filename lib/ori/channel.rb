@@ -3,20 +3,18 @@
 
 module Ori
   class Channel
-    extend(T::Sig)
-    extend(T::Generic)
-
-    Elem = type_template
-
     class << self
       extend(T::Sig)
+      extend(T::Generic)
+
+      Elem = type_member
 
       sig { params(size: Integer).returns(BaseChannel[Elem]) }
       def new(size)
         if size.zero?
-          ZeroSizedChannel.new
+          ZeroSizedChannel[Elem].new
         else
-          BufferedChannel.new(size)
+          BufferedChannel[Elem].new(size)
         end
       end
     end
@@ -37,7 +35,19 @@ module Ori
     alias_method :<<, :put
 
     sig { abstract.returns(Elem) }
+    def peek; end
+
+    sig { abstract.returns(Elem) }
     def take; end
+
+    sig { returns(T::Array[Elem]) }
+    def deconstruct
+      value = T.let(nil, T.nilable(Elem))
+
+      Ori.sync { value = take }
+
+      [T.must(value)]
+    end
   end
 
   class ZeroSizedChannel
@@ -50,6 +60,7 @@ module Ori
 
     sig { override.void }
     def initialize
+      super
       @taker_waiting = false
       @value = EMPTY
     end
@@ -77,6 +88,12 @@ module Ori
         @sender_waiting = false
       end
     end
+
+    sig { override.returns(Elem) }
+    def peek
+      Fiber.yield until @value != EMPTY
+      @value
+    end
   end
 
   class BufferedChannel
@@ -88,6 +105,7 @@ module Ori
 
     sig { override.params(size: Integer).void }
     def initialize(size)
+      super()
       @queue = UnboundedQueue.new
       @size = size
     end
@@ -103,6 +121,12 @@ module Ori
     def take
       Fiber.yield while @queue.peek == UnboundedQueue::EMPTY
       @queue.shift
+    end
+
+    sig { override.returns(Elem) }
+    def peek
+      Fiber.yield while @queue.peek == UnboundedQueue::EMPTY
+      @queue.peek
     end
   end
 

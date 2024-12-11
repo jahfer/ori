@@ -5,12 +5,6 @@ require "ori/channel"
 
 module Ori
   class Select
-    class << self
-      def from(awaits)
-        Select.new(awaits).await
-      end
-    end
-
     def initialize(resources)
       @resources = resources
     end
@@ -22,11 +16,14 @@ module Ori
         scope.each_async(@resources) do |resource|
           case resource
           when Ori::Timeout
+            # If timeout returns nil, it was cancelled
             winner.resolve(resource) if resource.await
           when Ori::Promise
-            winner.resolve([resource, resource.await])
+            resource.await
+            winner.resolve(resource)
           when Ori::BaseChannel
-            winner.resolve([resource, resource.take])
+            resource.peek
+            winner.resolve(resource)
           when Ori::Semaphore
             Fiber.yield until resource.available?
             winner.resolve(resource)

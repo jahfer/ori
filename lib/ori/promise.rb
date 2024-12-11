@@ -3,11 +3,17 @@
 
 module Ori
   class Promise
+    extend(T::Sig)
+    extend(T::Generic)
+
+    Elem = type_member
+
     def initialize
       @resolved = false
       @value = nil
     end
 
+    sig { params(value: Elem).void }
     def resolve(value)
       raise "Promise already resolved" if resolved?
 
@@ -15,10 +21,17 @@ module Ori
       @value = value
     end
 
+    sig { returns(T::Boolean) }
     def resolved?
       @resolved
     end
 
+    def deconstruct
+      await
+      [@value]
+    end
+
+    sig { returns(Elem) }
     def await
       return @value if resolved?
 

@@ -103,7 +103,7 @@ end
 
 #### Matching
 
-If you have a set of blocking resources, you can use `Ori::Select` to wait on them concurrently. `Ori::Select` will return the first resource to complete, and cancel waiting for the others. See [Concurrency Utilities](#concurrency-utilities) for more details on these tools.
+If you have a set of blocking resources, you can use `Ori.select` to wait on them concurrently. `Ori.select` will return the first resource to complete, and cancel waiting for the others. See [Concurrency Utilities](#concurrency-utilities) for more details on these resource classes.
 
 ```ruby
 promise = Ori::Promise.new
@@ -111,28 +111,25 @@ mutex = Ori::Mutex.new
 channel = Ori::Channel.new(1)
 timeout = Ori::Timeout.new(0.1) # stop after 100ms if no resource completes
 
-case Ori::Select.from([promise, mutex, channel, timeout])
-in ^promise, value
-  puts "Promise: #{value}"
-in ^mutex
-  mutex.synchronize { puts "Mutex acquired!" }
-in ^channel, value
-  puts "Channel: #{value}"
-in Ori::Timeout
-  puts "Timeout!"
+case Ori.select([promise, mutex, channel, timeout])
+in Ori::Promise(value)     then puts "Promise: #{value}"
+in Ori::Mutex              then puts "Mutex acquired!"
+in Ori::BaseChannel(value) then puts "Channel: #{value}"
+in Ori::Timeout            then puts "Timeout!"
 end
 ```
 
-You can also write the case statement using class names if you don't need to identify the specific resource:
+If you have multiple of the same resource, you can handle an explicit match using Ruby's pattern matching syntax:
 
 ```ruby
-case Ori::Select.from([promise, mutex, channel])
-in Ori::Promise, value
-  puts "Promise: #{value}"
-in Ori::Mutex
-  mutex.synchronize { puts "Mutex acquired!" }
-in Ori::Channel, value
-  puts "Channel: #{value}"
+promise_a = Ori::Promise.new
+promise_b = Ori::Promise.new
+
+case Ori.select([promise_a, promise_b])
+in Ori::Promise(value) => p if p == promise_a
+  puts "Promise A: #{value}"
+in Ori::Promise(value) => p if p == promise_b
+  puts "Promise B: #{value}"
 end
 ```
 

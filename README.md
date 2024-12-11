@@ -45,9 +45,9 @@ require "ori"
 
 The core of Ori is the concurrency boundary, which provides a controlled environment for running fibers and managing their lifecycle. `Ori.sync(&block)` is how you define a boundary, and will ensure all fibers within the boundary complete when the scope is closed, before continuing execution.
 
-Within a boundary, you can use `#fork(&block)` to run a new fiber. The fiber will run concurrently with other fibers in the boundary, and will be cancelled when the boundary is closed. If `#fork` isn't used, the code inside the boundary will run synchronously.
+Within a boundary, you can use `Ori::Scope#async(&block)` to run a new fiber. The fiber will run concurrently with other fibers in the boundary, and will be cancelled when the boundary is closed. If `#async` isn't used, the code inside the boundary will run synchronously.
 
-`Fiber.schedule(&block)`, provided by Ruby, is effectively identical to `#fork`, with the only difference being that `Ori::Scope#fork` can assign a new fiber to a parent scope, rather than only the active scope.
+`Fiber.schedule(&block)`, provided by Ruby, is effectively identical to `#async`, with the only difference being that `Ori::Scope#async` can assign a new fiber to an explicitly provided scope, rather than only the active scope.
 
 ```ruby
 Ori.sync do |scope|
@@ -82,7 +82,7 @@ Success!
 ![Trace visualization](./docs/images/example_boundary.png)
 </details>
 
-As a convenience, `Ori::Scope` provides a `#each_async` method that will fork a new fiber for each item in the enumerable. This can be useful for performing concurrent operations on a collection.
+As a convenience, `Ori::Scope` provides a `#each_async` method that will spawn a new fiber for each item in the enumerable. This can be useful for performing concurrent operations on a collection.
 
 The following code contains six seconds of `sleep` time, but will take only ~1 second to execute due to the interleaving of the fibers:
 

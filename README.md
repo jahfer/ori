@@ -17,6 +17,7 @@ Due to Ruby's GIL (Global Interpreter Lock), CRuby is unable to take advantage o
     - [`Ori::Channel`](#orichannel)
     - [`Ori::Mutex`](#orimutex)
     - [`Ori::Semaphore`](#orisemaphore)
+    - [`Ori::Timeout`](#oritimeout)
 - [Releases](#releases)
 - [License](#license)
 
@@ -135,7 +136,7 @@ end
 
 #### Timeouts and Cancellation
 
-You can also use `Ori.sync` with timeouts to automatically cancel or raise after a specified duration. When using `cancel_after(seconds)`, the scope will be cancelled but the boundary call will return normally. With `raise_after(seconds)`, a `Ori::Scope::CancellationError` will be raised after the specified duration. Both options will properly clean up any running fibers.
+You can also use `Ori.sync` with timeouts to automatically cancel or raise after a specified duration. When using `cancel_after: seconds`, the scope will be cancelled but the boundary call will return normally. With `raise_after: seconds`, a `Ori::Scope::CancellationError` will be raised after the specified duration. Both options will properly clean up any running fibers.
 
 Nested cancellation scopes are fully supported - a parent scope's deadline will be inherited by child scopes, and cancelling a parent scope will cancel all child scopes:
 
@@ -148,8 +149,8 @@ Ori.sync(raise_after: 5) do |scope|
   end
 
   # This inner scope has a shorter deadline
-  Ori.sync(cancel_after: 2) do |inner_scope|
-    inner_scope.async do
+  Ori.sync(cancel_after: 2) do |child_scope|
+    child_scope.async do
       # Will be cancelled after 2 seconds
       sleep(10)
     end
@@ -204,11 +205,13 @@ closed_scope = Ori.sync do |scope|
     sleep(0.0001)
     scope.tag("Woke up")
   end
+
   scope.async do
     scope.tag("Not sure what to do")
     Fiber.yield
     scope.tag("Finished yielding")
   end
+
   scope.tag("Finished queueing work")
 end
 
@@ -352,6 +355,33 @@ Ori.sync do |scope|
     end
   end
 end
+```
+
+#### `Ori::Timeout`
+
+A timeout is a special resource that will cancel after a specified duration. It's primary use case is as a resource in `Ori.select`.
+
+```ruby
+Ori.sync do |scope|
+  promise = Ori::Promise.new
+  timeout = Ori::Timeout.new(0.1) # stop after 100ms if the promise hasn't resolved
+
+  scope.async do
+    sleep(0.2)
+    promise.resolve("Hello from the future!")
+  end
+
+  case Ori.select([promise, timeout])
+  in Ori::Promise(value) then puts "Promise: #{value}"
+  in Ori::Timeout then puts "Timeout!"
+  end
+end
+```
+
+**Output:**
+
+```
+Timeout!
 ```
 
 <details>

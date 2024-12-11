@@ -8,6 +8,19 @@ loader.setup
 require "sorbet-runtime"
 
 module Ori
+  class CancellationError < StandardError
+    extend(T::Sig)
+
+    sig { returns(Scope) }
+    attr_reader :scope
+
+    sig { params(scope: Scope, message: T.nilable(String)).void }
+    def initialize(scope, message = "Scope cancelled")
+      @scope = scope
+      super(message)
+    end
+  end
+
   class << self
     extend(T::Sig)
 
@@ -16,15 +29,15 @@ module Ori
         name: T.nilable(String),
         cancel_after: T.nilable(Numeric),
         raise_after: T.nilable(Numeric),
-        block: T.proc.params(scope: Ori::Scope).void,
-      ).returns(Ori::Scope)
+        block: T.proc.params(scope: Scope).void,
+      ).returns(Scope)
     end
     def sync(name: nil, cancel_after: nil, raise_after: nil, &block)
       deadline = cancel_after || raise_after
       prev_scheduler = Fiber.current_scheduler
 
-      scope = Ori::Scope.new(
-        prev_scheduler.is_a?(Ori::Scope) ? prev_scheduler : nil,
+      scope = Scope.new(
+        prev_scheduler.is_a?(Scope) ? prev_scheduler : nil,
         name:,
         deadline:,
       )
@@ -40,7 +53,7 @@ module Ori
 
         scope.await
         scope
-      rescue Ori::Scope::CancellationError => error
+      rescue CancellationError => error
         # Re-raise if:
         # 1. The error is from a different scope, or
         # 2. This is our error but it's from raise_after
@@ -61,4 +74,6 @@ module Ori
       Ori::Select.new(resources).await
     end
   end
+
+  private_constant(:Scope)
 end

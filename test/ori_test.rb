@@ -51,4 +51,24 @@ class OriTest < Minitest::Test
 
     assert_equal(:a, result)
   end
+
+  def test_channel_scale
+    n = 1000
+    channels = Array.new(n) { Ori::Channel.new(0) }
+
+    Ori.sync do |scope|
+      # Create 1000 fibers that each send to a channel
+      scope.each_async(channels) do |c|
+        c << "hi"
+      end
+
+      n.times do
+        case Ori.select(channels)
+        in Ori::BaseChannel(value) => chan
+          assert_equal("hi", value)
+          channels.delete(chan)
+        end
+      end
+    end
+  end
 end

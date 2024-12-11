@@ -126,7 +126,7 @@ module Ori
     end
 
     def test_raise_after_timeout
-      assert_raises(Ori::Scope::CancellationError) do
+      assert_raises(CancellationError) do
         Ori.sync(raise_after: 0.001) do |scope|
           scope.async do
             sleep(10)

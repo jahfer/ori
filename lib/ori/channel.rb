@@ -40,13 +40,13 @@ module Ori
     sig { abstract.returns(Elem) }
     def take; end
 
+    sig { abstract.returns(T::Boolean) }
+    def value?; end
+
     sig { returns(T::Array[Elem]) }
     def deconstruct
-      value = T.let(nil, T.nilable(Elem))
-
-      Ori.sync { value = take }
-
-      [T.must(value)]
+      Ori.sync { peek }
+      [take]
     end
   end
 
@@ -70,6 +70,7 @@ module Ori
       @sender_waiting = true
       begin
         @value = item
+        # TODO: Communicate blocking condition to scope
         Fiber.yield until @taker_waiting
       ensure
         @taker_waiting = false
@@ -81,7 +82,7 @@ module Ori
     def take
       @taker_waiting = true
       begin
-        Fiber.yield until @value != EMPTY
+        Fiber.yield(self) until @value != EMPTY
         @value
       ensure
         @value = EMPTY
@@ -91,8 +92,13 @@ module Ori
 
     sig { override.returns(Elem) }
     def peek
-      Fiber.yield until @value != EMPTY
+      Fiber.yield(self) until @sender_waiting
       @value
+    end
+
+    sig { override.returns(T::Boolean) }
+    def value?
+      @value != EMPTY
     end
   end
 
@@ -112,24 +118,30 @@ module Ori
 
     sig { override.params(item: Elem).void }
     def put(item)
-      Fiber.yield until @queue.size < @size
+      Fiber.yield until @queue.size < @size # TODO: Fiber.yield(-> { @queue.size < @size })
       @queue.push(item)
     end
     alias_method :<<, :put
 
     sig { override.returns(Elem) }
     def take
-      Fiber.yield while @queue.peek == UnboundedQueue::EMPTY
+      Fiber.yield(self) until value?
       @queue.shift
     end
 
     sig { override.returns(Elem) }
     def peek
-      Fiber.yield while @queue.peek == UnboundedQueue::EMPTY
+      Fiber.yield(self) until value?
       @queue.peek
+    end
+
+    sig { override.returns(T::Boolean) }
+    def value?
+      @queue.peek != UnboundedQueue::EMPTY
     end
   end
 
+  # TODO: implement sliding queue, dropping queue
   class UnboundedQueue
     EMPTY = "empty"
 

@@ -27,7 +27,7 @@ module Ori
     end
 
     def deconstruct
-      await
+      await unless resolved?
       [@value]
     end
 
@@ -35,7 +35,7 @@ module Ori
     def await
       return @value if resolved?
 
-      Fiber.yield until resolved?
+      Fiber.yield(self) until resolved?
       @value
     end
   end

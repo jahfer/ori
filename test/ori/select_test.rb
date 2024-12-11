@@ -1,4 +1,4 @@
-# typed: false
+# typed: true
 # frozen_string_literal: true
 
 require "test_helper"
@@ -28,7 +28,7 @@ module Ori
     def test_select_with_semaphore
       promise = Promise.new
       semaphore = Semaphore.new(1)
-      result = nil
+      result = T.let(nil, T.nilable(Symbol))
 
       Ori.sync do |scope|
         scope.async { semaphore.synchronize { sleep(0.1) } }
@@ -65,7 +65,7 @@ module Ori
     def test_select_with_timeout
       promise = Promise.new
       timeout = Timeout.new(0.1)
-      result = nil
+      result = T.let(nil, T.nilable(Symbol))
 
       Ori.sync do |scope|
         scope.async do

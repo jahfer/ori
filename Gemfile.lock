@@ -1,3 +1,9 @@
+GIT
+  remote: https://github.com/jhawthorn/vernier.git
+  revision: abfdeedee362da21b11d9f5805565cf03f92fc27
+  specs:
+    vernier (1.4.0)
+
 PATH
   remote: .
   specs:
@@ -5,10 +11,6 @@ PATH
       nio4r (~> 2.7)
       sorbet-runtime
       zeitwerk (~> 2.7.1)
-
-GEM
-  remote: https://pkgs.shopify.io/basic/gems/ruby/
-  specs:
 
 GEM
   remote: https://rubygems.org/
@@ -119,6 +121,7 @@ DEPENDENCIES
   sorbet-static-and-runtime
   spoom
   tapioca
+  vernier!
 
 BUNDLED WITH
    2.5.22

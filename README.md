@@ -144,7 +144,7 @@ Nested cancellation scopes are fully supported - a parent scope's deadline will 
 Ori.sync(raise_after: 5) do |scope|
   # This inner scope inherits the 5 second deadline
   scope.async do
-    # Will raise `Ori::Scope::CancellationError` after 5 seconds
+    # Will raise `Ori::CancellationError` after 5 seconds
     sleep(10)
   end
 

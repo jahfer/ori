@@ -37,7 +37,7 @@ module Ori
     def test_await_waits_for_resolution
       promise = Promise.new
 
-      Ori::Scope.boundary do |scope|
+      Ori.sync do |scope|
         scope.fork do
           assert_equal("done", promise.await)
         end

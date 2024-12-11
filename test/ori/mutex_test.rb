@@ -9,7 +9,7 @@ module Ori
       mutex = Ori::Mutex.new
       value = 2
 
-      Ori::Scope.boundary do |scope|
+      Ori.sync do |scope|
         scope.fork do
           mutex.synchronize do
             sleep(0.01)

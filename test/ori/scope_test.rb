@@ -9,7 +9,7 @@ module Ori
       result = T.let(nil, T.nilable(String))
       captured_scope = T.let(nil, T.nilable(Scope))
 
-      Scope.boundary do |scope|
+      Ori.sync do |scope|
         captured_scope = scope
         result = "executed"
       end
@@ -20,7 +20,7 @@ module Ori
 
     def test_fork_execution
       results = []
-      Scope.boundary do |s|
+      Ori.sync do |s|
         s.fork { results << 1 }
         s.fork { results << 2 }
       end
@@ -30,7 +30,7 @@ module Ori
 
     def test_fork_each
       results = []
-      Scope.boundary do |s|
+      Ori.sync do |s|
         s.fork_each(1..3) do |i|
           results << i
         end
@@ -44,7 +44,7 @@ module Ori
       message = "hello"
       received = T.let(nil, T.nilable(String))
 
-      Scope.boundary do |s|
+      Ori.sync do |s|
         s.fork do
           writer.write(message)
           writer.close
@@ -63,7 +63,7 @@ module Ori
 
     def test_deterministic_execution_order
       sequence = []
-      Scope.boundary do |s|
+      Ori.sync do |s|
         s.fork do
           sequence << 1
           Fiber.yield
@@ -84,7 +84,7 @@ module Ori
       shared_value = 0
       operations = []
 
-      Scope.boundary do |s|
+      Ori.sync do |s|
         s.fork do
           operations << [:read, shared_value]  # 0
           Fiber.yield
@@ -114,7 +114,7 @@ module Ori
 
     def test_cancel_after_timeout
       result = T.let(nil, T.nilable(String))
-      Scope.boundary(cancel_after: 0.1) do |s|
+      Ori.sync(cancel_after: 0.1) do |s|
         s.fork do
           result = "A"
           sleep(1)
@@ -127,7 +127,7 @@ module Ori
 
     def test_raise_after_timeout
       assert_raises(Ori::Scope::CancellationError) do
-        Scope.boundary(raise_after: 0.001) do |scope|
+        Ori.sync(raise_after: 0.001) do |scope|
           scope.fork do
             sleep(10)
           end
@@ -138,8 +138,8 @@ module Ori
     def test_nested_boundary_cancellation_cancels_parent
       result = []
 
-      Scope.boundary(cancel_after: 0.1) do |_|
-        Scope.boundary do |scope|
+      Ori.sync(cancel_after: 0.1) do |_|
+        Ori.sync do |scope|
           scope.fork do
             result << "A"
             sleep(1)
@@ -155,7 +155,7 @@ module Ori
     def test_timeout_doesnt_affect_completed_operations
       result = T.let(nil, T.nilable(String))
 
-      Scope.boundary(cancel_after: 0.1) do |s|
+      Ori.sync(cancel_after: 0.1) do |s|
         s.fork do
           result = "completed"
         end

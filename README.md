@@ -42,14 +42,14 @@ require "ori"
 
 ### Defining Boundaries
 
-The core of Ori is the concurrency boundary, which provides a controlled environment for running fibers and managing their lifecycle. `Ori::Scope.boundary(&block)` is how you define a boundary, and will ensure all fibers within the boundary complete when the scope is closed, before continuing execution.
+The core of Ori is the concurrency boundary, which provides a controlled environment for running fibers and managing their lifecycle. `Ori.sync(&block)` is how you define a boundary, and will ensure all fibers within the boundary complete when the scope is closed, before continuing execution.
 
-Within a boundary, you can use `Ori::Scope#fork(&block)` to run a new fiber. The fiber will run concurrently with other fibers in the boundary, and will be cancelled when the boundary is closed. If `#fork` isn't used, the code inside the boundary will run synchronously.
+Within a boundary, you can use `#fork(&block)` to run a new fiber. The fiber will run concurrently with other fibers in the boundary, and will be cancelled when the boundary is closed. If `#fork` isn't used, the code inside the boundary will run synchronously.
 
 `Fiber.schedule(&block)`, provided by Ruby, is effectively identical to `#fork`, with the only difference being that `Ori::Scope#fork` can assign a new fiber to a parent scope, rather than only the active scope.
 
 ```ruby
-Ori::Scope.boundary do |scope|
+Ori.sync do |scope|
   # This runs in a new fiber
   scope.fork do
     sleep 1
@@ -86,7 +86,7 @@ As a convenience, `Ori::Scope` provides a `#fork_each` method that will fork a n
 The following code contains six seconds of `sleep` time, but will take only ~1 second to execute due to the interleaving of the fibers:
 
 ```ruby
-Ori::Scope.boundary do |scope|
+Ori.sync do |scope|
   # Spawns a new fiber for each item in the array
   scope.fork_each([1, 2, 3]) do |item|
     puts "Processing #{item}"
@@ -138,12 +138,12 @@ end
 
 #### Timeouts and Cancellation
 
-You can also use `Ori::Scope.boundary` with timeouts to automatically cancel or raise after a specified duration. When using `cancel_after(seconds)`, the scope will be cancelled but the boundary call will return normally. With `raise_after(seconds)`, a `Ori::Scope::CancellationError` will be raised after the specified duration. Both options will properly clean up any running fibers.
+You can also use `Ori.sync` with timeouts to automatically cancel or raise after a specified duration. When using `cancel_after(seconds)`, the scope will be cancelled but the boundary call will return normally. With `raise_after(seconds)`, a `Ori::Scope::CancellationError` will be raised after the specified duration. Both options will properly clean up any running fibers.
 
 Nested cancellation scopes are fully supported - a parent scope's deadline will be inherited by child scopes, and cancelling a parent scope will cancel all child scopes:
 
 ```ruby
-Ori::Scope.boundary(raise_after: 5) do |scope|
+Ori.sync(raise_after: 5) do |scope|
   # This inner scope inherits the 5 second deadline
   scope.fork do
     # Will raise `Ori::Scope::CancellationError` after 5 seconds
@@ -151,7 +151,7 @@ Ori::Scope.boundary(raise_after: 5) do |scope|
   end
 
   # This inner scope has a shorter deadline
-  Ori::Scope.boundary(cancel_after: 2) do |inner_scope|
+  Ori.sync(cancel_after: 2) do |inner_scope|
     inner_scope.fork do
       # Will be cancelled after 2 seconds
       sleep(10)
@@ -175,7 +175,7 @@ To help understand your program, Ori comes with several utilities to help you vi
 `Ori::Scope#print_ascii_trace` will print the trace to stdout in plaintext. While useful as a quick overview, it's not interactive and the level of detail is limited. 
 
 ```ruby
-closed_scope = Ori::Scope.boundary { ... }
+closed_scope = Ori.sync { ... }
 closed_scope.print_ascii_trace
 ```
 
@@ -201,7 +201,7 @@ Legend: (█ Start) (▒ Finish) (═ Running) (~ IO-Wait) (. Sleeping) (╎ Yie
 `#write_html_trace` also supports use of `Ori::Scope#tag` to add custom labels to the trace.
 
 ```ruby
-closed_scope = Ori::Scope.boundary do |scope|
+closed_scope = Ori.sync do |scope|
   scope.fork do
     scope.tag("Going to sleep")
     sleep(0.0001)
@@ -229,7 +229,7 @@ Ori comes with several utilities to help you build concurrent applications. Keep
 Promises represent values that may not be immediately available:
 
 ```ruby
-Ori::Scope.boundary do |scope|
+Ori.sync do |scope|
   promise = Ori::Promise.new
   scope.fork do
     sleep(1)
@@ -252,7 +252,7 @@ end
 Channels provide a way to communicate between fibers by passing values between them. Channels can buffer up to a specified number of items. When the channel is full, `put`/`<<` will block until there is room:
 
 ```ruby
-Ori::Scope.boundary do |scope|
+Ori.sync do |scope|
   channel = Ori::Channel.new(2)
   # Producer
   scope.fork do
@@ -286,7 +286,7 @@ When you need to enforce a critical section with strict ordering, use a mutex:
 
 ```ruby
 result = []
-Ori::Scope.boundary do |scope|
+Ori.sync do |scope|
   mutex = Ori::Mutex.new
   counter = 0
 
@@ -342,7 +342,7 @@ Without a mutex, the `counter` variable would be read and written in an interlea
 Semaphors are a generalized form of mutexes that can be used to control access to _n_ limited resources:
 
 ```ruby
-Ori::Scope.boundary do |scope|
+Ori.sync do |scope|
   # Allow up to 3 concurrent operations
   semaphore = Ori::Semaphore.new(3)
 

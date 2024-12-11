@@ -18,7 +18,7 @@ module Ori
     def await
       winner = Promise.new
 
-      Ori::Scope.boundary do |scope|
+      Ori.sync do |scope|
         scope.fork_each(@resources) do |resource|
           case resource
           when Ori::Timeout

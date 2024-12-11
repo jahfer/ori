@@ -10,7 +10,7 @@ module Ori
       chan = Channel.new(1)
       result = nil
 
-      Ori::Scope.boundary do |scope|
+      Ori.sync do |scope|
         scope.fork do
           sleep(0.1)
           chan.put(:channel)
@@ -30,7 +30,7 @@ module Ori
       semaphore = Semaphore.new(1)
       result = nil
 
-      Ori::Scope.boundary do |scope|
+      Ori.sync do |scope|
         scope.fork { semaphore.synchronize { sleep(0.1) } }
 
         result = case Select.from([promise, semaphore])
@@ -47,7 +47,7 @@ module Ori
       promise_b = Promise.new
       result = nil
 
-      Ori::Scope.boundary do |scope|
+      Ori.sync do |scope|
         scope.fork do
           sleep(0.1)
           promise_a.resolve(:promise_a)
@@ -67,7 +67,7 @@ module Ori
       timeout = Timeout.new(0.1)
       result = nil
 
-      Ori::Scope.boundary do |scope|
+      Ori.sync do |scope|
         scope.fork do
           sleep(0.2)
           promise.resolve(:promise)

@@ -15,66 +15,15 @@ module Ori
       end
     end
 
-    class << self
-      def boundary(name: nil, cancel_after: nil, raise_after: nil, &block)
-        prev_scheduler = Fiber.current_scheduler
-        nested_scope = prev_scheduler.is_a?(Scope)
-        scope = if nested_scope
-          Scope.new(prev_scheduler, name: name)
-        else
-          Scope.new(name: name)
-        end
-
-        # Set timeout if specified
-        deadline = cancel_after || raise_after
-        scope.deadline(deadline) if deadline
-
-        Fiber.set_scheduler(scope)
-
-        begin
-          if Fiber.current.blocking?
-            scope.fork { block.call(scope) }
-          else
-            yield(scope)
-          end
-
-          scope.await
-          scope
-        rescue CancellationError => error
-          # Re-raise if:
-          # 1. The error is from a different scope, or
-          # 2. This is our error but it's from raise_after
-          raise if error.scope != scope || !raise_after.nil?
-
-          scope # Return the scope even when cancelled
-        ensure
-          Fiber.set_scheduler(prev_scheduler)
-        end
-      end
-    end
-
     attr_reader :tracer
 
-    def initialize(parent_scope = nil, name: nil)
+    def initialize(parent_scope = nil, deadline: nil, name: nil)
       @scope_id = Random.uuid_v7(extra_timestamp_bits: 12)
       @name = name
       @parent_scope = parent_scope
       @tracer = parent_scope&.tracer || Tracer.new
       @cancelled = false
       @cancel_reason = nil
-
-      # Inherit parent's deadline if it exists
-      if parent_scope&.remaining_deadline
-        @deadline_at = current_time + parent_scope.remaining_deadline
-        @deadline_owner = parent_scope.deadline_owner
-      end
-
-      # Get the creating fiber's ID from the parent scope if we're in a fiber
-      creating_fiber_id = if parent_scope
-        parent_scope.fiber_ids[Fiber.current]
-      end
-
-      @tracer.register_scope(@scope_id, parent_scope&.scope_id, creating_fiber_id, name: @name)
 
       @pending = []
       @ready = {}
@@ -84,12 +33,15 @@ module Ori
       @readable = Hash.new { |h, k| h[k] = Set.new }
       @writable = Hash.new { |h, k| h[k] = Set.new }
       @waiting = {}
-
-      @tracer.record_scope(@scope_id, :opened)
-
       @child_scopes = Set.new
 
+      inherit_or_set_deadline(deadline)
+
+      creating_fiber_id = parent_scope.fiber_ids[Fiber.current] if parent_scope
+      @tracer.register_scope(@scope_id, parent_scope&.scope_id, creating_fiber_id, name: @name)
       @parent_scope&.register_child_scope(self)
+
+      @tracer.record_scope(@scope_id, :opened)
     end
 
     # Users are not expected to call this method directly
@@ -110,36 +62,13 @@ module Ori
       fiber(&block)
     end
 
-    def closed? = @closed
-
     def fork_each(enumerable)
       return enum_for(:fork_each, enumerable) unless block_given?
 
       enumerable.each { |item| fork { yield(item) } }
     end
 
-    def tag(name)
-      @tracer.record_scope(@scope_id, :tag, name)
-    end
-
-    def print_ascii_trace
-      @tracer.visualize
-    end
-
-    def write_html_trace(directory)
-      @tracer.write_timeline_data(directory)
-    end
-
-    def deadline(duration)
-      @parent_scope&.remaining_deadline
-
-      # If we already have a deadline (inherited or set), use the shorter one
-      current_remaining = remaining_deadline
-      return if current_remaining && current_remaining < duration
-
-      @deadline_at = current_time + duration
-      @deadline_owner = self
-    end
+    def closed? = @closed
 
     def cancel!(cause = nil)
       return if @cancelled
@@ -165,6 +94,18 @@ module Ori
       cleanup_io_resources
 
       @tracer.record_scope(@scope_id, :cancelled)
+    end
+
+    def tag(name)
+      @tracer.record_scope(@scope_id, :tag, name)
+    end
+
+    def print_ascii_trace
+      @tracer.visualize
+    end
+
+    def write_html_trace(directory)
+      @tracer.write_timeline_data(directory)
     end
 
     # Ruby FiberScheduler interface implementation
@@ -272,6 +213,7 @@ module Ori
     # def io_pread(...) = ()
     # def io_pwrite(...) = ()
 
+    # TODO: Implement these
     # def process_wait(...) = ()
     # def timeout_after(...) = ()
     # def address_resolve(...) = ()
@@ -316,6 +258,19 @@ module Ori
     attr_reader :child_scopes
 
     # Scope lifecycle
+
+    def inherit_or_set_deadline(duration)
+      parent_deadline = parent_scope&.remaining_deadline
+
+      if parent_deadline && (duration.nil? || parent_deadline < duration)
+        # Inherit parent's deadline
+        @deadline_at = current_time + parent_deadline
+        @deadline_owner = parent_scope.deadline_owner
+      elsif duration
+        @deadline_at = current_time + duration
+        @deadline_owner = self
+      end
+    end
 
     def process_available_work
       check_deadline!
@@ -393,16 +348,11 @@ module Ori
 
     def next_timeout
       timeouts = T.let([], T::Array[Numeric])
-
-      # Add IO wait + sleep timeouts
       timeouts.concat(@waiting.values.compact) unless @waiting.empty?
-
-      # Add deadline timeout if one exists
       timeouts << @deadline_at if @deadline_at
 
       return 0 if timeouts.empty?
 
-      # Calculate the nearest timeout
       nearest = T.must(timeouts.min)
       delay = nearest - current_time
 
@@ -437,7 +387,6 @@ module Ori
       # @tracer.record(id, :resuming)
 
       begin
-        # TODO: Unnecessary?
         raise CancellationError.new(self, @cancel_reason) if @cancelled
 
         fiber.resume
@@ -503,7 +452,6 @@ module Ori
       dead_fibers = @fiber_ids.keys.reject(&:alive?).to_set
       return if dead_fibers.empty?
 
-      # Clean up dead fibers from all collections
       @readable.each_value { |fibers| fibers.subtract(dead_fibers) }
       @readable.delete_if { |_, fibers| fibers.empty? }
 

@@ -9,7 +9,7 @@ module Ori
       chan = Ori::Channel.new(2)
       results = []
 
-      Ori::Scope.boundary do |scope|
+      Ori.sync do |scope|
         scope.fork_each([1, nil, 3]) { |item| chan << item }
         scope.fork_each(3.times) { results << chan.take }
       end
@@ -21,7 +21,7 @@ module Ori
       chan = Ori::Channel.new(0)
       results = []
 
-      Ori::Scope.boundary do |scope|
+      Ori.sync do |scope|
         scope.fork do
           results << "Sending data..."
           chan << 42

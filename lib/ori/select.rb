@@ -19,7 +19,7 @@ module Ori
       winner = Promise.new
 
       Ori.sync do |scope|
-        scope.fork_each(@resources) do |resource|
+        scope.each_async(@resources) do |resource|
           case resource
           when Ori::Timeout
             winner.resolve(resource) if resource.await

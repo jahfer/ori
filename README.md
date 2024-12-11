@@ -51,13 +51,13 @@ Within a boundary, you can use `#fork(&block)` to run a new fiber. The fiber wil
 ```ruby
 Ori.sync do |scope|
   # This runs in a new fiber
-  scope.fork do
+  scope.async do
     sleep 1
     puts "Hello from fiber!"
   end
 
   # This doesn't wait for the first fiber to complete
-  scope.fork do
+  scope.async do
     sleep 0.5
     puts "Another fiber here!"
   end
@@ -81,20 +81,20 @@ Success!
 ![Trace visualization](./docs/images/example_boundary.png)
 </details>
 
-As a convenience, `Ori::Scope` provides a `#fork_each` method that will fork a new fiber for each item in the enumerable. This can be useful for performing concurrent operations on a collection.
+As a convenience, `Ori::Scope` provides a `#each_async` method that will fork a new fiber for each item in the enumerable. This can be useful for performing concurrent operations on a collection.
 
 The following code contains six seconds of `sleep` time, but will take only ~1 second to execute due to the interleaving of the fibers:
 
 ```ruby
 Ori.sync do |scope|
   # Spawns a new fiber for each item in the array
-  scope.fork_each([1, 2, 3]) do |item|
+  scope.each_async([1, 2, 3]) do |item|
     puts "Processing #{item}"
     sleep(1)
   end
 
   # Any Enumerable can be used
-  scope.fork_each(3.times) do |i|
+  scope.each_async(3.times) do |i|
     puts "Processing #{i}"
     sleep(1)
   end
@@ -145,14 +145,14 @@ Nested cancellation scopes are fully supported - a parent scope's deadline will 
 ```ruby
 Ori.sync(raise_after: 5) do |scope|
   # This inner scope inherits the 5 second deadline
-  scope.fork do
+  scope.async do
     # Will raise `Ori::Scope::CancellationError` after 5 seconds
     sleep(10)
   end
 
   # This inner scope has a shorter deadline
   Ori.sync(cancel_after: 2) do |inner_scope|
-    inner_scope.fork do
+    inner_scope.async do
       # Will be cancelled after 2 seconds
       sleep(10)
     end
@@ -202,12 +202,12 @@ Legend: (█ Start) (▒ Finish) (═ Running) (~ IO-Wait) (. Sleeping) (╎ Yie
 
 ```ruby
 closed_scope = Ori.sync do |scope|
-  scope.fork do
+  scope.async do
     scope.tag("Going to sleep")
     sleep(0.0001)
     scope.tag("Woke up")
   end
-  scope.fork do
+  scope.async do
     scope.tag("Not sure what to do")
     Fiber.yield
     scope.tag("Finished yielding")
@@ -231,7 +231,7 @@ Promises represent values that may not be immediately available:
 ```ruby
 Ori.sync do |scope|
   promise = Ori::Promise.new
-  scope.fork do
+  scope.async do
     sleep(1)
     promise.resolve("Hello from the future!")
   end
@@ -255,13 +255,13 @@ Channels provide a way to communicate between fibers by passing values between t
 Ori.sync do |scope|
   channel = Ori::Channel.new(2)
   # Producer
-  scope.fork do
+  scope.async do
     # Will block after the first two puts
     5.times { |i| channel << i }
   end
 
   # Consumer
-  scope.fork do
+  scope.async do
     5.times { puts "Received: #{channel.take}" }
   end
 end
@@ -290,7 +290,7 @@ Ori.sync do |scope|
   mutex = Ori::Mutex.new
   counter = 0
 
-  scope.fork do
+  scope.async do
     mutex.synchronize do
       current = counter
       result << [:A, :read, current]
@@ -300,7 +300,7 @@ Ori.sync do |scope|
     end
   end
 
-  scope.fork do
+  scope.async do
     mutex.synchronize do
       current = counter
       result << [:B, :read, current]
@@ -347,7 +347,7 @@ Ori.sync do |scope|
   semaphore = Ori::Semaphore.new(3)
 
   10.times do |i|
-    scope.fork do
+    scope.async do
       semaphore.synchronize do
         puts "Processing #{i}"
         sleep(1) # Simulate work

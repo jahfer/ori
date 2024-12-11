@@ -58,14 +58,14 @@ module Ori
 
     # Public API
 
-    def fork(&block)
+    def async(&block)
       fiber(&block)
     end
 
-    def fork_each(enumerable)
-      return enum_for(:fork_each, enumerable) unless block_given?
+    def each_async(enumerable)
+      return enum_for(:each_async, enumerable) unless block_given?
 
-      enumerable.each { |item| fork { yield(item) } }
+      enumerable.each { |item| async { yield(item) } }
     end
 
     def closed? = @closed

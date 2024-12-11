@@ -33,7 +33,7 @@ module Ori
 
       begin
         if Fiber.current.blocking?
-          scope.fork { block.call(scope) }
+          scope.async { block.call(scope) }
         else
           yield(scope)
         end

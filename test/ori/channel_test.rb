@@ -10,8 +10,8 @@ module Ori
       results = []
 
       Ori.sync do |scope|
-        scope.fork_each([1, nil, 3]) { |item| chan << item }
-        scope.fork_each(3.times) { results << chan.take }
+        scope.each_async([1, nil, 3]) { |item| chan << item }
+        scope.each_async(3.times) { results << chan.take }
       end
 
       assert_equal([1, nil, 3], results)
@@ -22,13 +22,13 @@ module Ori
       results = []
 
       Ori.sync do |scope|
-        scope.fork do
+        scope.async do
           results << "Sending data..."
           chan << 42
           results << "Data sent!"
         end
 
-        scope.fork do
+        scope.async do
           results << "Receiving data..."
           value = chan.take
           results << "Data received! #{value}"

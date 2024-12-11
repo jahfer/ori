@@ -11,7 +11,7 @@ module Ori
       result = nil
 
       Ori.sync do |scope|
-        scope.fork do
+        scope.async do
           sleep(0.1)
           chan.put(:channel)
         end
@@ -31,7 +31,7 @@ module Ori
       result = nil
 
       Ori.sync do |scope|
-        scope.fork { semaphore.synchronize { sleep(0.1) } }
+        scope.async { semaphore.synchronize { sleep(0.1) } }
 
         result = case Select.from([promise, semaphore])
         in ^promise, _value then raise "Should not happen"
@@ -48,7 +48,7 @@ module Ori
       result = nil
 
       Ori.sync do |scope|
-        scope.fork do
+        scope.async do
           sleep(0.1)
           promise_a.resolve(:promise_a)
         end
@@ -68,7 +68,7 @@ module Ori
       result = nil
 
       Ori.sync do |scope|
-        scope.fork do
+        scope.async do
           sleep(0.2)
           promise.resolve(:promise)
         end

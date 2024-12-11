@@ -21,8 +21,8 @@ module Ori
     def test_fork_execution
       results = []
       Ori.sync do |s|
-        s.fork { results << 1 }
-        s.fork { results << 2 }
+        s.async { results << 1 }
+        s.async { results << 2 }
       end
 
       assert_equal([1, 2], results.sort)
@@ -31,7 +31,7 @@ module Ori
     def test_fork_each
       results = []
       Ori.sync do |s|
-        s.fork_each(1..3) do |i|
+        s.each_async(1..3) do |i|
           results << i
         end
       end
@@ -45,12 +45,12 @@ module Ori
       received = T.let(nil, T.nilable(String))
 
       Ori.sync do |s|
-        s.fork do
+        s.async do
           writer.write(message)
           writer.close
         end
 
-        s.fork do
+        s.async do
           received = reader.read
           reader.close
         end
@@ -64,13 +64,13 @@ module Ori
     def test_deterministic_execution_order
       sequence = []
       Ori.sync do |s|
-        s.fork do
+        s.async do
           sequence << 1
           Fiber.yield
           sequence << 3
         end
 
-        s.fork do
+        s.async do
           sequence << 2
           Fiber.yield
           sequence << 4
@@ -85,7 +85,7 @@ module Ori
       operations = []
 
       Ori.sync do |s|
-        s.fork do
+        s.async do
           operations << [:read, shared_value]  # 0
           Fiber.yield
           shared_value = 1
@@ -94,7 +94,7 @@ module Ori
           operations << [:read, shared_value]  # 2
         end
 
-        s.fork do
+        s.async do
           Fiber.yield
           operations << [:read, shared_value]  # 1
           shared_value = 2
@@ -115,7 +115,7 @@ module Ori
     def test_cancel_after_timeout
       result = T.let(nil, T.nilable(String))
       Ori.sync(cancel_after: 0.1) do |s|
-        s.fork do
+        s.async do
           result = "A"
           sleep(1)
           result = "B"
@@ -128,7 +128,7 @@ module Ori
     def test_raise_after_timeout
       assert_raises(Ori::Scope::CancellationError) do
         Ori.sync(raise_after: 0.001) do |scope|
-          scope.fork do
+          scope.async do
             sleep(10)
           end
         end
@@ -140,7 +140,7 @@ module Ori
 
       Ori.sync(cancel_after: 0.1) do |_|
         Ori.sync do |scope|
-          scope.fork do
+          scope.async do
             result << "A"
             sleep(1)
             result << "B"
@@ -156,11 +156,11 @@ module Ori
       result = T.let(nil, T.nilable(String))
 
       Ori.sync(cancel_after: 0.1) do |s|
-        s.fork do
+        s.async do
           result = "completed"
         end
 
-        s.fork do
+        s.async do
           sleep(1)
         end
       end

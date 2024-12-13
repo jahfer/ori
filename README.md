@@ -24,7 +24,7 @@ Due to Ruby's GIL (Global Interpreter Lock), CRuby is unable to take advantage o
 ## Installation
 
 ```ruby
-gem "shopify-ori", "~> 0.1.2"
+gem "shopify-ori", "~> 0.2"
 ```
 
 Then execute:

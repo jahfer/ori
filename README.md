@@ -2,7 +2,7 @@
 
 Ori is a library for Ruby that provides a robust set of primitives for building concurrent applications. The name comes from the Japanese word 折り "ori" meaning "fold", reflecting how concurrent operations interleave.
 
-Due to Ruby's GIL (Global Interpreter Lock), CRuby is unable to take advantage of a multi-threaded environment in the way that other languages do. Ori provides a set of primitives that allow you to build concurrent applications—that is, applications that interleave execution within a single thread—without blocking the entire Ruby interpreter for each task.
+Ori provides a set of primitives that allow you to build concurrent applications—that is, applications that interleave execution within a single thread—without blocking the entire Ruby interpreter for each task.
 
 ## Table of Contents
 
@@ -41,13 +41,15 @@ require "ori"
 
 ## Usage
 
+Ori aims to make concurrency in Ruby simple, intuitive, and easy to manage.
+
 ### Defining Boundaries
 
-The core of Ori is the concurrency boundary, which provides a controlled environment for running fibers and managing their lifecycle. `Ori.sync(&block)` is how you define a boundary, and will ensure all fibers within the boundary complete when the scope is closed, before continuing execution.
+At the core of Ori is the concurrency boundary. Ori guarantees everything inside of a boundary will complete before any code after the boundary starts. As well boundaries can be freely nested, allowing you to define critical sections where multiple tasks may run concurrently.
 
-Within a boundary, you can use `Ori::Scope#async(&block)` to run a new fiber. The fiber will run concurrently with other fibers in the boundary, and will be cancelled when the boundary is closed. If `#async` isn't used, the code inside the boundary will run synchronously.
+To create a new concurrency boundary, call `Ori.sync(&block)`. Once inside a boundary, you can use `Ori::Scope#async(&block)` to spawn some concurrent work. If `Ori::Scope#async` isn't used, the code inside the boundary will run synchronously from the perspective of the boundary.
 
-`Fiber.schedule(&block)`, provided by Ruby, is effectively identical to `#async`, with the only difference being that `Ori::Scope#async` can assign a new fiber to an explicitly provided scope, rather than only the active scope.
+`Fiber.schedule(&block)`, provided by Ruby, is nearly identical to `Ori::Scope#async`, with the only difference being that `Ori::Scope#async` can spawn a fiber to an explicitly provided scope, rather than only the active scope.
 
 ```ruby
 Ori.sync do |scope|

@@ -53,7 +53,7 @@ At the core of Ori is the concurrency boundary. Ori guarantees everything inside
 
 To create a new concurrency boundary, call `Ori.sync` with your block of code. Once inside the boundary, you can use `Ori::Scope#async` or `Fiber.schedule(&block)` to define and run concurrent work. Code written inside of the boundary but outside of `Ori::Scope#async` will run synchronously (from the perspective of the boundary).
 
-> [!INFO]
+> [!TIP]
 > `Fiber.schedule(&block)`—provided by Ruby—is nearly identical to `Ori::Scope#async`, with the only difference being that `Ori::Scope#async` can spawn a fiber in whichever scope it is called, rather than being limited to the active scope.
 
 ```ruby

@@ -51,7 +51,7 @@ Ori aims to make concurrency in Ruby simple, intuitive, and easy to manage. Ther
 
 At the core of Ori is the concurrency boundary. Ori guarantees everything inside of a boundary will complete before any code after the boundary starts. Boundaries can be freely nested, allowing you to define critical sections inside of other critical sections.
 
-To create a new concurrency boundary, call `Ori.sync` with your block of code. Once inside the boundary, you can use `Ori::Scope#async` or `Fiber.schedule(&block)` to define and run concurrent work. Code written inside of the boundary but outside of `Ori::Scope#async` will run synchronously (from the perspective of the boundary).
+To create a new concurrency boundary, call `Ori.sync` with your block of code. Once inside the boundary, you can use `Ori::Scope#async` or `Fiber.schedule(&block)` to define and run concurrent work. Code written inside of the boundary but outside of `Ori::Scope#async` will run synchronously from the perspective of the boundary. 
 
 > [!TIP]
 > `Fiber.schedule(&block)`—provided by Ruby—is nearly identical to `Ori::Scope#async`, with the only difference being that `Ori::Scope#async` can spawn a fiber in whichever scope it is called, rather than being limited to the active scope.
@@ -95,7 +95,7 @@ If you have a set of blocking resources, you can use `Ori.select` in combination
 
 `Ori.select` will block until the first resource becomes available, returning that value and cancel waiting for the others. Matching against Ori's utility classes is particularly efficient because Ori can check internally if the blocking resources are available before attempting the heavier task of resuming the code.
 
-See [Concurrency Utilities](#concurrency-utilities) for more details on these resource classes.
+See [Concurrency Utilities](#concurrency-utilities) for more details on these classes.
 
 ```ruby
 promise = Ori::Promise.new
@@ -104,10 +104,10 @@ channel = Ori::Channel.new(1)
 timeout = Ori::Timeout.new(0.1) # stop after 100ms if no resource completes
 
 case Ori.select([promise, mutex, channel, timeout])
-in Ori::Promise(value)     then puts "Promise: #{value}"
-in Ori::Mutex              then puts "Mutex acquired!"
-in Ori::BaseChannel(value) then puts "Channel: #{value}"
-in Ori::Timeout            then puts "Timeout!"
+in Ori::Promise(value) then puts "Promise: #{value}"
+in Ori::Mutex          then puts "Mutex acquired!"
+in Ori::Channel(value) then puts "Channel: #{value}"
+in Ori::Timeout        then puts "Timeout!"
 end
 ```
 

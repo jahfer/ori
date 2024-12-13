@@ -16,7 +16,7 @@ class OriTest < Minitest::Test
 
     result = case Ori.select([promise, chan])
     in Ori::Promise(value) then value
-    in Ori::BaseChannel(value) then raise "should not happen"
+    in Ori::Channel(value) then raise "should not happen"
     end
 
     assert_equal(:promise, result)
@@ -30,7 +30,7 @@ class OriTest < Minitest::Test
 
     result = case Ori.select([promise, chan])
     in Ori::Promise(value) then raise "should not happen"
-    in Ori::BaseChannel(value) then value
+    in Ori::Channel(value) then value
     end
 
     assert_equal(:chan, result)
@@ -64,7 +64,7 @@ class OriTest < Minitest::Test
 
       n.times do
         case Ori.select(channels)
-        in Ori::BaseChannel(value) => chan
+        in Ori::Channel(value) => chan
           assert_equal("hi", value)
           channels.delete(chan)
         end

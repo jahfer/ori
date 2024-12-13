@@ -21,7 +21,7 @@ module Ori
           when Ori::Promise
             resource.await
             winner.resolve(resource)
-          when Ori::BaseChannel
+          when Ori::Channel
             resource.peek
             winner.resolve(resource)
           when Ori::Semaphore

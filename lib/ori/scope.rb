@@ -289,7 +289,7 @@ module Ori
 
       @blocked.each do |fiber, resource|
         case resource
-        when Ori::BaseChannel
+        when Ori::Channel
           fibers_to_resume << fiber if resource.value?
         when Ori::Promise
           fibers_to_resume << fiber if resource.resolved?
@@ -403,7 +403,7 @@ module Ori
         raise CancellationError.new(self, @cancel_reason) if @cancelled
 
         case maybe_blocked_resource = fiber.resume
-        when Ori::BaseChannel, Ori::Promise, Ori::Semaphore
+        when Ori::Channel, Ori::Promise, Ori::Semaphore
           # Special case for channels, promises, and semaphores
           # as we can detect when they are ready without naïvely
           # resuming the fiber.

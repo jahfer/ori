@@ -45,5 +45,15 @@ module Ori
         results,
       )
     end
+
+    def test_case_equality
+      channel = Ori::Channel.new(0)
+      assert_equal(true, Ori::Channel === channel)
+
+      case channel
+      when Ori::Channel then assert(true)
+      else raise "should not happen"
+      end
+    end
   end
 end

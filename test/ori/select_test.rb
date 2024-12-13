@@ -18,7 +18,7 @@ module Ori
 
         result = case Select.new([promise, chan]).await
         in Promise(_) then raise "Should not happen"
-        in BaseChannel(value) then value
+        in Channel(value) then value
         end
       end
 

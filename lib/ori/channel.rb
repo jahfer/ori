@@ -2,24 +2,6 @@
 # frozen_string_literal: true
 
 module Ori
-  class Channel
-    class << self
-      extend(T::Sig)
-      extend(T::Generic)
-
-      Elem = type_member
-
-      sig { params(size: Integer).returns(BaseChannel[Elem]) }
-      def new(size)
-        if size.zero?
-          ZeroSizedChannel[Elem].new
-        else
-          BufferedChannel[Elem].new(size)
-        end
-      end
-    end
-  end
-
   # Base class for different channel implementations
   module BaseChannel
     extend(T::Sig)
@@ -32,7 +14,8 @@ module Ori
     sig { abstract.params(item: Elem).void }
     def put(item); end
 
-    alias_method :<<, :put
+    sig { params(item: Elem).void }
+    def <<(item) = put(item)
 
     sig { abstract.returns(Elem) }
     def peek; end
@@ -48,6 +31,28 @@ module Ori
       Ori.sync { peek }
       [take]
     end
+  end
+
+  class Channel
+    extend(T::Sig)
+    extend(T::Generic)
+    include(BaseChannel)
+
+    Elem = type_member
+
+    sig { params(size: Integer).void }
+    def initialize(size)
+      @chan = if size.zero?
+        ZeroSizedChannel[Elem].new
+      else
+        BufferedChannel[Elem].new(size)
+      end
+    end
+
+    def put(...) = @chan.put(...)
+    def take = @chan.take
+    def peek = @chan.peek
+    def value? = @chan.value?
   end
 
   class ZeroSizedChannel
@@ -76,7 +81,6 @@ module Ori
         @taker_waiting = false
       end
     end
-    alias_method :<<, :put
 
     sig { override.returns(Elem) }
     def take
@@ -121,7 +125,6 @@ module Ori
       Fiber.yield until @queue.size < @size # TODO: Fiber.yield(-> { @queue.size < @size })
       @queue.push(item)
     end
-    alias_method :<<, :put
 
     sig { override.returns(Elem) }
     def take

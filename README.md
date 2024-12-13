@@ -11,6 +11,7 @@ Ori provides a set of primitives that allow you to build concurrent applications
   - [Defining Boundaries](#defining-boundaries)
     - [Matching](#matching)
     - [Timeouts and Cancellation](#timeouts-and-cancellation)
+    - [Collections](#collections)
     - [Debugging](#debugging)
   - [Concurrency Utilities](#concurrency-utilities)
     - [`Ori::Promise`](#oripromise)
@@ -41,15 +42,19 @@ require "ori"
 
 ## Usage
 
-Ori aims to make concurrency in Ruby simple, intuitive, and easy to manage.
+Ori aims to make concurrency in Ruby simple, intuitive, and easy to manage. There are only two decisions you need to make when using Ori: 
+
+1. What code must complete _before_ other code starts?
+2. What code can run at the same time as other code?
 
 ### Defining Boundaries
 
-At the core of Ori is the concurrency boundary. Ori guarantees everything inside of a boundary will complete before any code after the boundary starts. As well boundaries can be freely nested, allowing you to define critical sections where multiple tasks may run concurrently.
+At the core of Ori is the concurrency boundary. Ori guarantees everything inside of a boundary will complete before any code after the boundary starts. Boundaries can be freely nested, allowing you to define critical sections inside of other critical sections.
 
-To create a new concurrency boundary, call `Ori.sync(&block)`. Once inside a boundary, you can use `Ori::Scope#async(&block)` to spawn some concurrent work. If `Ori::Scope#async` isn't used, the code inside the boundary will run synchronously from the perspective of the boundary.
+To create a new concurrency boundary, call `Ori.sync` with your block of code. Once inside the boundary, you can use `Ori::Scope#async` or `Fiber.schedule(&block)` to define and run concurrent work. Code written inside of the boundary but outside of `Ori::Scope#async` will run synchronously (from the perspective of the boundary).
 
-`Fiber.schedule(&block)`, provided by Ruby, is nearly identical to `Ori::Scope#async`, with the only difference being that `Ori::Scope#async` can spawn a fiber to an explicitly provided scope, rather than only the active scope.
+> [!INFO]
+> `Fiber.schedule(&block)`—provided by Ruby—is nearly identical to `Ori::Scope#async`, with the only difference being that `Ori::Scope#async` can spawn a fiber in whichever scope it is called, rather than being limited to the active scope.
 
 ```ruby
 Ori.sync do |scope|
@@ -66,7 +71,7 @@ Ori.sync do |scope|
   end
 end
 
-# Boundary blocks until all fibers complete
+# Ori.sync blocks until all fibers complete
 puts "Success!"
 ```
 
@@ -84,29 +89,13 @@ Success!
 ![Trace visualization](./docs/images/example_boundary.png)
 </details>
 
-As a convenience, `Ori::Scope` provides a `#each_async` method that will spawn a new fiber for each item in the enumerable. This can be useful for performing concurrent operations on a collection.
-
-The following code contains six seconds of `sleep` time, but will take only ~1 second to execute due to the interleaving of the fibers:
-
-```ruby
-Ori.sync do |scope|
-  # Spawns a new fiber for each item in the array
-  scope.each_async([1, 2, 3]) do |item|
-    puts "Processing #{item}"
-    sleep(1)
-  end
-
-  # Any Enumerable can be used
-  scope.each_async(3.times) do |i|
-    puts "Processing #{i}"
-    sleep(1)
-  end
-end
-```
-
 #### Matching
 
-If you have a set of blocking resources, you can use `Ori.select` to wait on them concurrently. `Ori.select` will return the first resource to complete, and cancel waiting for the others. See [Concurrency Utilities](#concurrency-utilities) for more details on these resource classes.
+If you have a set of blocking resources, you can use `Ori.select` in combination with Ruby's `case … in` pattern-matching to wait on them concurrently. 
+
+`Ori.select` will block until the first resource becomes available, returning that value and cancel waiting for the others. Matching against Ori's utility classes is particularly efficient because Ori can check internally if the blocking resources are available before attempting the heavier task of resuming the code.
+
+See [Concurrency Utilities](#concurrency-utilities) for more details on these resource classes.
 
 ```ruby
 promise = Ori::Promise.new
@@ -138,9 +127,11 @@ end
 
 #### Timeouts and Cancellation
 
-You can also use `Ori.sync` with timeouts to automatically cancel or raise after a specified duration. When using `cancel_after: seconds`, the scope will be cancelled but the boundary call will return normally. With `raise_after: seconds`, a `Ori::Scope::CancellationError` will be raised after the specified duration. Both options will properly clean up any running fibers.
+You can also use `Ori.sync` with timeouts to automatically cancel or raise after a specified duration. 
 
-Nested cancellation scopes are fully supported - a parent scope's deadline will be inherited by child scopes, and cancelling a parent scope will cancel all child scopes:
+When using `cancel_after: seconds`, the scope will be cancelled but the boundary will close with raising an error. With `raise_after: seconds`, a `Ori::Scope::CancellationError` will be raised from the boundary call site after the specified duration. Both options will properly clean up any internally-spawned fibers and nested scopes.
+
+A parent scope's deadline is inherited by child scopes, and cancelling a parent scope will cancel all child scopes:
 
 ```ruby
 Ori.sync(raise_after: 5) do |scope|
@@ -166,9 +157,35 @@ end
 ![Trace visualization](./docs/images/example_boundary_cancellation.png)
 </details>
 
+### Collections
+
+As a convenience, `Ori::Scope` provides an `#each_async` method that will spawn a new fiber for each item in an enumerable. This can be useful for performing concurrent operations on a collection.
+
+The following code contains six seconds of `sleep` time, but will take only ~1 second to execute due to the interleaving of the fibers:
+
+```ruby
+Ori.sync do |scope|
+  # Spawns a new fiber for each item in the array
+  scope.each_async([1, 2, 3]) do |item|
+    puts "Processing #{item}"
+    sleep(1)
+  end
+
+  # Any Enumerable can be used
+  scope.each_async(3.times) do |i|
+    puts "Processing #{i}"
+    sleep(1)
+  end
+end
+```
+
 ### Debugging
 
-To help understand your program, Ori comes with several utilities to help you visualize the execution of your program.
+To help understand your program, Ori comes with several utilities to help you visualize the execution of your program, as well as being supported by the broader Ruby ecosystem.
+
+#### Vernier 
+
+The HEAD of [jhawthorn/vernier](https://github.com/jhawthorn/vernier) supports tracking the spawning and yielding of fibers, to help analyze your concurrent program over time.
 
 #### Plain-Text Visualization
 

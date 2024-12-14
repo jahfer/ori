@@ -58,7 +58,7 @@ class OriTest < Minitest::Test
 
     Ori.sync do |scope|
       # Create 1000 fibers that each send to a channel
-      scope.each_async(channels) do |c|
+      scope.fork_each(channels) do |c|
         c << "hi"
       end
 

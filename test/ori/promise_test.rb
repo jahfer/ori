@@ -38,11 +38,11 @@ module Ori
       promise = Promise.new
 
       Ori.sync do |scope|
-        scope.async do
+        scope.fork do
           assert_equal("done", promise.await)
         end
 
-        scope.async do
+        scope.fork do
           promise.resolve("done")
         end
       end

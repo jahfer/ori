@@ -3,14 +3,12 @@
 
 require "nio"
 require "random/formatter"
-require "ori/channel"
 
 module Ori
   class Scope
     attr_reader :tracer
 
     def initialize(parent_scope = nil, deadline: nil, name: nil, trace: false)
-      @scope_id = Random.uuid_v7(extra_timestamp_bits: 12)
       @name = name
       @parent_scope = parent_scope
       @tracer = if trace || parent_scope&.tracing?
@@ -20,6 +18,7 @@ module Ori
       @cancel_reason = nil
 
       @pending = []
+      @tasks = {}
       @ready = {}
       @fiber_ids = {}
       @closed = false
@@ -33,6 +32,7 @@ module Ori
       inherit_or_set_deadline(deadline)
 
       if @tracer
+        @scope_id = Random.uuid_v7(extra_timestamp_bits: 12)
         creating_fiber_id = parent_scope.fiber_ids[Fiber.current] if parent_scope
         @tracer.register_scope(@scope_id, parent_scope&.scope_id, creating_fiber_id, name: @name)
         @parent_scope&.register_child_scope(self)
@@ -54,21 +54,27 @@ module Ori
 
     # Public API
 
-    def async(&block)
-      fiber(&block)
+    def fork(&block)
+      task = create_task(&block)
+      resume_task_or_fiber(task)
+      task
     end
 
-    def each_async(enumerable)
-      return enum_for(:each_async, enumerable) unless block_given?
+    def fork_each(enumerable)
+      return enum_for(:fork_each, enumerable) unless block_given?
 
-      enumerable.each { |item| async { yield(item) } }
+      enumerable.each { |item| fork { yield(item) } }
+    end
+
+    def tasks
+      @tasks.values
     end
 
     def closed? = @closed
 
     def tracing? = !@tracer.nil?
 
-    def cancel!(cause = nil)
+    def shutdown!(cause = nil)
       return if @cancelled
 
       @cancelled = true
@@ -78,7 +84,7 @@ module Ori
       @tracer&.record_scope(@scope_id, :cancelling, cancellation_error.message)
 
       @child_scopes.each do |scope|
-        scope.cancel!(cause)
+        scope.shutdown!(cause)
       end
 
       (@pending + @waiting.keys + @blocked.keys).each do |fiber|
@@ -88,6 +94,8 @@ module Ori
       cleanup_io_resources
 
       @tracer&.record_scope(@scope_id, :cancelled)
+
+      raise(cause || cancellation_error)
     end
 
     def tag(name)
@@ -105,7 +113,8 @@ module Ori
     # Ruby FiberScheduler interface implementation
 
     def fiber(&block)
-      create_and_run_fiber(&block)
+      task = fork(&block)
+      task.fiber
     end
 
     def io_wait(io, events, timeout = nil)
@@ -353,7 +362,7 @@ module Ori
 
       if current_time >= @deadline_at
         error = CancellationError.new(@deadline_owner)
-        cancel!(error)
+        shutdown!(error)
         raise error
       end
     end
@@ -374,51 +383,55 @@ module Ori
 
     # Fiber management
 
-    def create_and_run_fiber(&block)
+    def create_task(&block)
       raise CancellationError.new(self, @cancel_reason) if @cancelled
       raise "Scope is closed" if closed?
 
-      fiber = Fiber.new(&block)
-      id = @tracer ? generate_fiber_id : fiber.object_id
-      @fiber_ids[fiber] = id
-      if @tracer
-        @tracer.register_fiber(id, @scope_id)
-        @tracer.record(id, :created)
-      end
-
-      resume_fiber(fiber)
-      fiber
+      task = Task.new(&block)
+      register_task(task)
+      task
     end
 
-    def generate_fiber_id
-      Random.uuid_v7(extra_timestamp_bits: 12)
+    def register_task(task)
+      @fiber_ids[task.fiber] = task.id
+      @tasks[task.fiber] = task
+
+      if @tracer
+        @tracer.register_fiber(task.id, @scope_id)
+        @tracer.record(task.id, :created)
+      end
     end
 
     def resume_fiber(fiber)
-      return unless fiber.alive?
+      resume_task_or_fiber(@tasks.fetch(fiber, fiber))
+    end
 
+    def resume_task_or_fiber(task_or_fiber)
+      return unless task_or_fiber.alive?
+
+      fiber = task_or_fiber.is_a?(Task) ? task_or_fiber.fiber : task_or_fiber
       id = @fiber_ids[fiber]
 
       begin
         raise CancellationError.new(self, @cancel_reason) if @cancelled
 
-        case maybe_blocked_resource = fiber.resume
+        case result = task_or_fiber.resume
         when Ori::Channel, Ori::Promise, Ori::Semaphore
-          # Special case for channels, promises, and semaphores
-          # as we can detect when they are ready without naïvely
-          # resuming the fiber.
-          @blocked[fiber] = maybe_blocked_resource
+          @blocked[fiber] = result
+        when Task
+          @pending << fiber
         else
           @pending << fiber if fiber.alive?
         end
       rescue CancellationError => error
         @tracer&.record(id, :cancelled, error.message)
-        fiber.kill
+        task_or_fiber.kill
       rescue => error
         @tracer&.record(id, :error, error.message)
-        cancel!(error)
-        raise error
+        shutdown!(error)
+        raise(error)
       end
+
       @tracer&.record(id, :completed) unless fiber.alive?
     end
 
@@ -429,10 +442,14 @@ module Ori
       @tracer&.record(id, :cancelling, error.message)
 
       begin
-        fiber.raise(error)
+        if (task = @tasks[fiber])
+          task.raise_error(error)
+        else
+          fiber.raise(error)
+        end
       rescue CancellationError => e
         @tracer&.record(id, :cancelled, e.message)
-        fiber.kill
+        task ? task.kill : fiber.kill
       end
     end
 

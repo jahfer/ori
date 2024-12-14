@@ -5,6 +5,9 @@ require "ori/channel"
 
 module Ori
   class Select
+    extend(T::Sig)
+
+    sig { params(resources: T::Array[Ori::Selectable]).void }
     def initialize(resources)
       @resources = resources
     end
@@ -13,25 +16,19 @@ module Ori
       winner = Promise.new
 
       Ori.sync do |scope|
-        scope.each_async(@resources) do |resource|
+        scope.fork_each(@resources) do |resource|
           case resource
           when Ori::Timeout
-            # If timeout returns nil, it was cancelled
+            # Timeout returns nil if it was cancelled
             winner.resolve(resource) if resource.await
-          when Ori::Promise
+          when Ori::Selectable # Ori::Promise, Ori::Task, Ori::Channel, Ori::Semaphore
             resource.await
-            winner.resolve(resource)
-          when Ori::Channel
-            resource.peek
-            winner.resolve(resource)
-          when Ori::Semaphore
-            Fiber.yield until resource.available?
             winner.resolve(resource)
           else
             raise "Unsupported await type: #{resource.class}"
           end
 
-          scope.cancel!
+          scope.shutdown!
         end
       end
 

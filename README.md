@@ -11,7 +11,7 @@ Ori provides a set of primitives that allow you to build concurrent applications
   - [Defining Boundaries](#defining-boundaries)
     - [Matching](#matching)
     - [Timeouts and Cancellation](#timeouts-and-cancellation)
-    - [Collections](#collections)
+    - [Enumerables](#enumerables)
     - [Debugging](#debugging)
   - [Concurrency Utilities](#concurrency-utilities)
     - [`Ori::Promise`](#oripromise)
@@ -51,21 +51,18 @@ Ori aims to make concurrency in Ruby simple, intuitive, and easy to manage. Ther
 
 At the core of Ori is the concurrency boundary. Ori guarantees everything inside of a boundary will complete before any code after the boundary starts. Boundaries can be freely nested, allowing you to define critical sections inside of other critical sections.
 
-To create a new concurrency boundary, call `Ori.sync` with your block of code. Once inside the boundary, you can use `Ori::Scope#async` or `Fiber.schedule(&block)` to define and run concurrent work. Code written inside of the boundary but outside of `Ori::Scope#async` will run synchronously from the perspective of the boundary. 
-
-> [!TIP]
-> `Fiber.schedule(&block)`—provided by Ruby—is nearly identical to `Ori::Scope#async`, with the only difference being that `Ori::Scope#async` can spawn a fiber in whichever scope it is called, rather than being limited to the active scope.
+To create a new concurrency boundary, call `Ori.sync` with your block of code. Once inside the boundary, you can use `Ori::Scope#fork` to define and run concurrent work. Code written inside of the boundary but outside of `Ori::Scope#fork` will run synchronously from the perspective of the boundary. `Ori::Scope#fork` will return an `Ori::Task` object, which you can use to wait for the fiber to complete, or retrieve its result.
 
 ```ruby
 Ori.sync do |scope|
   # This runs in a new fiber
-  scope.async do
+  scope.fork do
     sleep 1
     puts "Hello from fiber!"
   end
 
   # This doesn't wait for the first fiber to complete
-  scope.async do
+  scope.fork do
     sleep 0.5
     puts "Another fiber here!"
   end
@@ -91,7 +88,7 @@ Success!
 
 #### Matching
 
-If you have a set of blocking resources, you can use `Ori.select` in combination with Ruby's `case … in` pattern-matching to wait on them concurrently. 
+Ori has powerful support for matching against concurrent resources. If you have a set of blocking resources, you can use `Ori.select` in combination with Ruby's `case … in` pattern-matching to wait on the first available resource.
 
 `Ori.select` will block until the first resource becomes available, returning that value and cancel waiting for the others. Matching against Ori's utility classes is particularly efficient because Ori can check internally if the blocking resources are available before attempting the heavier task of resuming the code.
 
@@ -125,6 +122,37 @@ in Ori::Promise(value) => p if p == promise_b
 end
 ```
 
+You can even make creative use of Ruby's pattern-matching syntax to race multiple tasks against each other, in very compact form:
+
+```ruby
+Ori.sync do |scope|
+  tasks = 3.times.map do |i|
+    scope.fork do
+      sleep_time = Random.rand(1.0)
+      puts "Task ##{i} is sleeping for #{sleep_time.round(2)} seconds..."
+      sleep(sleep_time)
+      i
+    end
+  end
+
+  # This will match the first task to complete
+  Ori.select(tasks) => Ori::Task(value)
+  puts "First task to complete: ##{value}"
+
+  # Stop processing any further tasks
+  scope.shutdown!
+end
+```
+
+**Output:**
+
+```
+Task #0 is sleeping for 0.95 seconds...
+Task #1 is sleeping for 0.93 seconds...
+Task #2 is sleeping for 0.45 seconds...
+First task to complete: #2
+```
+
 #### Timeouts and Cancellation
 
 You can also use `Ori.sync` with timeouts to automatically cancel or raise after a specified duration. 
@@ -136,14 +164,14 @@ A parent scope's deadline is inherited by child scopes, and cancelling a parent 
 ```ruby
 Ori.sync(raise_after: 5) do |scope|
   # This inner scope inherits the 5 second deadline
-  scope.async do
+  scope.fork do
     # Will raise `Ori::CancellationError` after 5 seconds
     sleep(10)
   end
 
   # This inner scope has a shorter deadline
   Ori.sync(cancel_after: 2) do |child_scope|
-    child_scope.async do
+    child_scope.fork do
       # Will be cancelled after 2 seconds
       sleep(10)
     end
@@ -157,22 +185,22 @@ end
 ![Trace visualization](./docs/images/example_boundary_cancellation.png)
 </details>
 
-### Collections
+### Enumerables
 
-As a convenience, `Ori::Scope` provides an `#each_async` method that will spawn a new fiber for each item in an enumerable. This can be useful for performing concurrent operations on a collection.
+As a convenience, `Ori::Scope` provides an `#fork_each` method that will spawn a new fiber for each item in an enumerable. This can be useful for performing concurrent operations on a collection.
 
 The following code contains six seconds of `sleep` time, but will take only ~1 second to execute due to the interleaving of the fibers:
 
 ```ruby
 Ori.sync do |scope|
   # Spawns a new fiber for each item in the array
-  scope.each_async([1, 2, 3]) do |item|
+  scope.fork_each([1, 2, 3]) do |item|
     puts "Processing #{item}"
     sleep(1)
   end
 
   # Any Enumerable can be used
-  scope.each_async(3.times) do |i|
+  scope.fork_each(3.times) do |i|
     puts "Processing #{i}"
     sleep(1)
   end
@@ -219,13 +247,13 @@ Legend: (█ Start) (▒ Finish) (═ Running) (~ IO-Wait) (. Sleeping) (╎ Yie
 
 ```ruby
 closed_scope = Ori.sync do |scope|
-  scope.async do
+  scope.fork do
     scope.tag("Going to sleep")
     sleep(0.0001)
     scope.tag("Woke up")
   end
 
-  scope.async do
+  scope.fork do
     scope.tag("Not sure what to do")
     Fiber.yield
     scope.tag("Finished yielding")
@@ -250,7 +278,7 @@ Promises represent values that may not be immediately available:
 ```ruby
 Ori.sync do |scope|
   promise = Ori::Promise.new
-  scope.async do
+  scope.fork do
     sleep(1)
     promise.resolve("Hello from the future!")
   end
@@ -274,13 +302,13 @@ Channels provide a way to communicate between fibers by passing values between t
 Ori.sync do |scope|
   channel = Ori::Channel.new(2)
   # Producer
-  scope.async do
+  scope.fork do
     # Will block after the first two puts
     5.times { |i| channel << i }
   end
 
   # Consumer
-  scope.async do
+  scope.fork do
     5.times { puts "Received: #{channel.take}" }
   end
 end
@@ -309,7 +337,7 @@ Ori.sync do |scope|
   mutex = Ori::Mutex.new
   counter = 0
 
-  scope.async do
+  scope.fork do
     mutex.synchronize do
       current = counter
       result << [:A, :read, current]
@@ -319,7 +347,7 @@ Ori.sync do |scope|
     end
   end
 
-  scope.async do
+  scope.fork do
     mutex.synchronize do
       current = counter
       result << [:B, :read, current]
@@ -366,7 +394,7 @@ Ori.sync do |scope|
   semaphore = Ori::Semaphore.new(3)
 
   10.times do |i|
-    scope.async do
+    scope.fork do
       semaphore.synchronize do
         puts "Processing #{i}"
         sleep(1) # Simulate work
@@ -385,7 +413,7 @@ Ori.sync do |scope|
   promise = Ori::Promise.new
   timeout = Ori::Timeout.new(0.1) # stop after 100ms if the promise hasn't resolved
 
-  scope.async do
+  scope.fork do
     sleep(0.2)
     promise.resolve("Hello from the future!")
   end

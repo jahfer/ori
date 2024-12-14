@@ -11,7 +11,7 @@ module Ori
       result = nil
 
       Ori.sync do |scope|
-        scope.async do
+        scope.fork do
           sleep(0.1)
           chan.put(:channel)
         end
@@ -31,7 +31,7 @@ module Ori
       result = T.let(nil, T.nilable(Symbol))
 
       Ori.sync do |scope|
-        scope.async { semaphore.synchronize { sleep(0.1) } }
+        scope.fork { semaphore.synchronize { sleep(0.1) } }
 
         result = case Select.new([promise, semaphore]).await
         in Promise(_) then raise "Should not happen"
@@ -48,7 +48,7 @@ module Ori
       result = nil
 
       Ori.sync do |scope|
-        scope.async do
+        scope.fork do
           sleep(0.1)
           promise_a.resolve(:promise_a)
         end
@@ -68,7 +68,7 @@ module Ori
       result = T.let(nil, T.nilable(Symbol))
 
       Ori.sync do |scope|
-        scope.async do
+        scope.fork do
           sleep(0.2)
           promise.resolve(:promise)
         end
@@ -80,6 +80,27 @@ module Ori
       end
 
       assert_equal(:timeout, result)
+    end
+
+    def test_select_with_task
+      result = nil
+
+      Ori.sync do |scope|
+        scope.fork do
+          sleep(5)
+          :task_a
+        end
+
+        scope.fork { :task_b }
+
+        # Select first task to finish
+        Ori.select(scope.tasks) => Task(value)
+        result = value
+        # Stop processing any further tasks
+        scope.shutdown!
+      end
+
+      assert_equal(:task_b, result)
     end
   end
 end

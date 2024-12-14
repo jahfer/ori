@@ -108,7 +108,23 @@ in Ori::Timeout        then puts "Timeout!"
 end
 ```
 
-If you have multiple of the same resource, you can handle an explicit match using Ruby's pattern matching syntax:
+This matching syntax can also be leveraged to race multiple tasks against each other, in very compact form:
+
+```ruby
+Ori.sync do |scope|
+  # Spawn 3 tasks
+  tasks = scope.fork_each(3.times).map { do_work }
+
+  # Wait for the first task to complete
+  Ori.select(tasks) => Ori::Task(value)
+  puts "First result: #{value}"
+
+  # Stop processing any further tasks
+  scope.shutdown!
+end
+```
+
+If you have multiple of the same resource, you can perform an explicit match using Ruby's pattern matching syntax:
 
 ```ruby
 promise_a = Ori::Promise.new
@@ -120,37 +136,6 @@ in Ori::Promise(value) => p if p == promise_a
 in Ori::Promise(value) => p if p == promise_b
   puts "Promise B: #{value}"
 end
-```
-
-You can even make creative use of Ruby's pattern-matching syntax to race multiple tasks against each other, in very compact form:
-
-```ruby
-Ori.sync do |scope|
-  tasks = 3.times.map do |i|
-    scope.fork do
-      sleep_time = Random.rand(1.0)
-      puts "Task ##{i} is sleeping for #{sleep_time.round(2)} seconds..."
-      sleep(sleep_time)
-      i
-    end
-  end
-
-  # This will match the first task to complete
-  Ori.select(tasks) => Ori::Task(value)
-  puts "First task to complete: ##{value}"
-
-  # Stop processing any further tasks
-  scope.shutdown!
-end
-```
-
-**Output:**
-
-```
-Task #0 is sleeping for 0.95 seconds...
-Task #1 is sleeping for 0.93 seconds...
-Task #2 is sleeping for 0.45 seconds...
-First task to complete: #2
 ```
 
 #### Timeouts and Cancellation

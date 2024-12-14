@@ -3,6 +3,8 @@
 
 module Ori
   class Timeout
+    include(Ori::Selectable)
+
     def initialize(duration)
       @duration = duration
     end

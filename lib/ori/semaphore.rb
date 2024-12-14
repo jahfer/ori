@@ -3,6 +3,8 @@
 
 module Ori
   class Semaphore
+    include(Ori::Selectable)
+
     def initialize(num_tickets)
       raise ArgumentError, "Number of tickets must be positive" if num_tickets <= 0
 
@@ -36,6 +38,11 @@ module Ori
 
     def count
       @available
+    end
+
+    def await
+      Fiber.yield until available?
+      true
     end
   end
 end

@@ -7,6 +7,8 @@ loader.setup
 
 require "sorbet-runtime"
 
+T::Configuration.default_checked_level = :tests
+
 module Ori
   class CancellationError < StandardError
     extend(T::Sig)
@@ -47,7 +49,7 @@ module Ori
 
       begin
         if Fiber.current.blocking?
-          scope.async { block.call(scope) }
+          scope.fork { block.call(scope) }
         else
           yield(scope)
         end
@@ -68,7 +70,7 @@ module Ori
 
     sig do
       type_parameters(:U)
-        .params(resources: T::Array[T.type_parameter(:U)])
+        .params(resources: T::Array[T.all(T.type_parameter(:U), Ori::Selectable)])
         .returns(T.type_parameter(:U))
     end
     def select(resources)

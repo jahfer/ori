@@ -5,6 +5,7 @@ module Ori
   class Promise
     extend(T::Sig)
     extend(T::Generic)
+    include(Ori::Selectable)
 
     Elem = type_member
 
@@ -31,7 +32,7 @@ module Ori
       [@value]
     end
 
-    sig { returns(Elem) }
+    sig { override.returns(Elem) }
     def await
       return @value if resolved?
 

@@ -10,14 +10,14 @@ module Ori
       value = 2
 
       Ori.sync do |scope|
-        scope.async do
+        scope.fork do
           mutex.synchronize do
             sleep(0.01)
             value += 1
           end
         end
 
-        scope.async do
+        scope.fork do
           # waits for sleep
           mutex.synchronize { value *= 2 }
         end

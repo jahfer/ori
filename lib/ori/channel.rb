@@ -37,6 +37,7 @@ module Ori
     extend(T::Sig)
     extend(T::Generic)
     include(BaseChannel)
+    include(Ori::Selectable)
 
     Elem = type_member
 
@@ -53,6 +54,11 @@ module Ori
     def take = @chan.take
     def peek = @chan.peek
     def value? = @chan.value?
+
+    def await
+      @chan.peek
+      self
+    end
   end
 
   class ZeroSizedChannel

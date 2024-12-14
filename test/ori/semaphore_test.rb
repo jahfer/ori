@@ -30,17 +30,17 @@ module Ori
       assert_equal(2, @semaphore.count)
     end
 
-    def test_synchronize
+    def test_sync
       initial_count = @semaphore.count
-      result = @semaphore.synchronize { "test" }
+      result = @semaphore.sync { "test" }
       assert_equal("test", result)
       assert_equal(initial_count, @semaphore.count)
     end
 
-    def test_synchronize_with_exception
+    def test_sync_with_exception
       initial_count = @semaphore.count
       assert_raises(RuntimeError) do
-        @semaphore.synchronize { raise "error" }
+        @semaphore.sync { raise "error" }
       end
       assert_equal(initial_count, @semaphore.count)
     end

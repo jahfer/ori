@@ -31,7 +31,7 @@ module Ori
       result = T.let(nil, T.nilable(Symbol))
 
       Ori.sync do |scope|
-        scope.fork { semaphore.synchronize { sleep(0.1) } }
+        scope.fork { semaphore.sync { sleep(0.1) } }
 
         result = case Select.new([promise, semaphore]).await
         in Promise(_) then raise "Should not happen"

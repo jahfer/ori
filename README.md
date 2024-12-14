@@ -323,7 +323,7 @@ Ori.sync do |scope|
   counter = 0
 
   scope.fork do
-    mutex.synchronize do
+    mutex.sync do
       current = counter
       result << [:A, :read, current]
       Fiber.yield # Simulate work
@@ -333,7 +333,7 @@ Ori.sync do |scope|
   end
 
   scope.fork do
-    mutex.synchronize do
+    mutex.sync do
       current = counter
       result << [:B, :read, current]
       counter = current + 1
@@ -380,7 +380,7 @@ Ori.sync do |scope|
 
   10.times do |i|
     scope.fork do
-      semaphore.synchronize do
+      semaphore.sync do
         puts "Processing #{i}"
         sleep(1) # Simulate work
       end

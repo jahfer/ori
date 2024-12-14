@@ -12,7 +12,7 @@ module Ori
       @available = num_tickets
     end
 
-    def synchronize
+    def sync
       acquire
       yield
     ensure

@@ -16,7 +16,7 @@ module Ori
           chan.put(:channel)
         end
 
-        result = case Select.new([promise, chan]).await
+        result = case Select.await([promise, chan])
         in Promise(_) then raise "Should not happen"
         in Channel(value) then value
         end
@@ -33,7 +33,7 @@ module Ori
       Ori.sync do |scope|
         scope.fork { semaphore.sync { sleep(0.1) } }
 
-        result = case Select.new([promise, semaphore]).await
+        result = case Select.await([promise, semaphore])
         in Promise(_) then raise "Should not happen"
         in Semaphore then :semaphore
         end
@@ -53,7 +53,7 @@ module Ori
           promise_a.resolve(:promise_a)
         end
 
-        result = case Select.new([promise_a, promise_b]).await
+        result = case Select.await([promise_a, promise_b])
         in Promise(_) => x if x == promise_b then raise "Should not happen"
         in Promise(value) => x if x == promise_a then value
         end
@@ -73,7 +73,7 @@ module Ori
           promise.resolve(:promise)
         end
 
-        result = case Select.new([timeout, promise]).await
+        result = case Select.await([timeout, promise])
         in Promise(_) then raise "Should not happen"
         in Timeout then :timeout
         end

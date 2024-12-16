@@ -6,7 +6,6 @@ loader = Zeitwerk::Loader.for_gem
 loader.setup
 
 require "sorbet-runtime"
-
 T::Configuration.default_checked_level = :tests
 
 module Ori
@@ -38,11 +37,10 @@ module Ori
       deadline = cancel_after || raise_after
       prev_scheduler = Fiber.current_scheduler
 
-      # TODO: Use Ori::Mutex instead of creating a new scope?
       scope = Scope.new(
         prev_scheduler.is_a?(Scope) ? prev_scheduler : nil,
-        name:,
-        deadline:,
+        name,
+        deadline,
       )
 
       Fiber.set_scheduler(scope)
@@ -74,7 +72,7 @@ module Ori
         .returns(T.type_parameter(:U))
     end
     def select(resources)
-      Ori::Select.new(resources).await
+      Ori::Select.await(resources)
     end
   end
 

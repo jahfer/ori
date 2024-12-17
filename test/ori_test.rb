@@ -2,6 +2,8 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "objspace"
+require "allocation_stats"
 
 class OriTest < Minitest::Test
   def test_that_it_has_a_version_number
@@ -53,22 +55,37 @@ class OriTest < Minitest::Test
   end
 
   def test_channel_scale
-    n = 1000
-    channels = Array.new(n) { Ori::Channel.new(0) }
+    stats = AllocationStats.trace do
+      alloc_start = GC.stat(:total_allocated_objects)
+      n = 1000
+      channels = Array.new(n) { Ori::Channel.new(0) }
 
-    Ori.sync do |scope|
-      # Create 1000 fibers that each send to a channel
-      scope.fork_each(channels) do |c|
-        c << "hi"
-      end
+      Ori.sync do |scope|
+        # Create 1000 fibers that each send to a channel
+        scope.fork_each(channels) do |c|
+          c << "hi"
+        end
 
-      n.times do
-        case Ori.select(channels)
-        in Ori::Channel(value) => chan
-          assert_equal("hi", value)
-          channels.delete(chan)
+        n.times do
+          case Ori.select(channels)
+          in Ori::Channel(value) => chan
+            assert_equal("hi", value)
+            channels.delete(chan)
+          end
         end
       end
+
+      alloc_end = GC.stat(:total_allocated_objects)
+      puts "Allocations: #{alloc_end - alloc_start}"
     end
+
+    puts stats.allocations(alias_paths: true).from("/ori/").sort_by_size.group_by(
+      :sourcefile,
+      :sourceline,
+      :class,
+      :memsize,
+    ).to_text
+
+    puts stats.allocations(alias_paths: true).from("/ori/").bytes.all.sum
   end
 end

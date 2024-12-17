@@ -3,6 +3,7 @@
 
 require "nio"
 require "random/formatter"
+require "ori/lazy"
 
 module Ori
   class Scope
@@ -23,14 +24,14 @@ module Ori
       @cancel_reason = nil
       @closed = false
 
-      @fiber_ids = {}
-      @pending = []
-      @tasks = {}
+      @fiber_ids = LazyHash.new
+      @tasks = LazyHash.new
+      @pending = LazyArray.new
 
-      @readable = Hash.new(HASH_SET_LAMBDA)
-      @writable = Hash.new(HASH_SET_LAMBDA)
-      @waiting = {}
-      @blocked = {}
+      @readable = LazyHashSet.new
+      @writable = LazyHashSet.new
+      @waiting = LazyHash.new
+      @blocked = LazyHash.new
 
       inherit_or_set_deadline(deadline)
 
@@ -58,7 +59,7 @@ module Ori
 
     def fork(&block)
       task = create_task(&block)
-      resume_task_or_fiber(task)
+      resume_task_or_fiber(task) if task
       task
     end
 
@@ -101,7 +102,7 @@ module Ori
 
       @tracer&.record_scope(@scope_id, :cancelled)
 
-      raise(cause || exn)
+      cause || exn
     end
 
     def tag(name)
@@ -241,6 +242,7 @@ module Ori
 
       @readable.any? { |_, fibers| fibers.any?(&:alive?) } ||
         @writable.any? { |_, fibers| fibers.any?(&:alive?) } ||
+        # TODO???
         @waiting.any? { |fiber, _| fiber.alive? } ||
         @blocked.any? { |fiber, _| fiber.alive? } ||
         @pending.any?(&:alive?) ||
@@ -288,7 +290,10 @@ module Ori
     end
 
     def process_available_work
-      check_deadline!
+      if (error = check_deadline!)
+        return error
+      end
+
       cleanup_dead_fibers
 
       process_pending_fibers
@@ -300,6 +305,7 @@ module Ori
     def process_pending_fibers
       @pending.size.times do
         fiber = @pending.shift
+        # TODO???
         next if @waiting.key?(fiber)
 
         resume_fiber(fiber)
@@ -356,7 +362,9 @@ module Ori
     end
 
     def process_timeouts(now = current_time)
-      check_deadline!
+      if (error = check_deadline!)
+        return error
+      end
 
       fibers_to_resume = []
       @waiting.each do |fiber, deadline|
@@ -377,7 +385,7 @@ module Ori
       if current_time >= @deadline_at
         error = CancellationError.new(@deadline_owner)
         shutdown!(error)
-        raise error
+        error
       end
     end
 
@@ -398,7 +406,7 @@ module Ori
     # Fiber management
 
     def create_task(&block)
-      raise cancellation_error if @cancelled
+      return false if @cancelled
       raise "Scope is closed" if closed?
 
       task = Task.new(&block)
@@ -427,19 +435,20 @@ module Ori
       id = @fiber_ids[fiber]
 
       begin
-        raise(cancellation_error) if @cancelled
+        return if @cancelled # Early return if cancelled
 
-        case result = task_or_fiber.resume
+        result = task_or_fiber.resume
+        case result
+        when CancellationError
+          @tracer&.record(id, :cancelled, result.message)
+          task_or_fiber.kill
         when Ori::Channel, Ori::Promise, Ori::Semaphore
           @blocked[fiber] = result
         when Task
-          @pending << fiber # TODO: does this need to be a special case?
+          @pending << fiber
         else
           @pending << fiber if fiber.alive?
         end
-      rescue CancellationError => error
-        @tracer&.record(id, :cancelled, error.message)
-        task_or_fiber.kill
       rescue => error
         @tracer&.record(id, :error, error.message)
         shutdown!(error)
@@ -455,16 +464,15 @@ module Ori
       id = @fiber_ids[fiber]
       @tracer&.record(id, :cancelling, error.message)
 
-      begin
-        if (task = @tasks[fiber])
-          task.raise_error(error)
-        else
-          fiber.raise(error)
-        end
-      rescue CancellationError => e
-        @tracer&.record(id, :cancelled, e.message)
-        task ? task.kill : fiber.kill
+      if (task = @tasks[fiber])
+        task.cancel(error)
+      else
+        # For raw fibers, we still need to resume them one last time
+        # to give them a chance to cleanup
+        fiber.raise(error)
       end
+
+      @tracer&.record(id, :cancelled, error.message)
     end
 
     # Registration
@@ -497,13 +505,13 @@ module Ori
     # Cleanup
 
     def cleanup_dead_fibers
-      dead_fibers = @fiber_ids.keys.reject(&:alive?).to_set
+      dead_fibers = @fiber_ids.reject { |fiber, _| fiber.alive? }.to_set
       return if dead_fibers.empty?
 
-      @readable.each_value { |fibers| fibers.subtract(dead_fibers) }
+      @readable.each { |_, fibers| fibers.subtract(dead_fibers) }
       @readable.delete_if { |_, fibers| fibers.empty? }
 
-      @writable.each_value { |fibers| fibers.subtract(dead_fibers) }
+      @writable.each { |_, fibers| fibers.subtract(dead_fibers) }
       @writable.delete_if { |_, fibers| fibers.empty? }
 
       @waiting.delete_if { |fiber, _| !fiber.alive? }

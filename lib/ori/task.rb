@@ -42,6 +42,11 @@ module Ori
     end
 
     def resume
+      if @cancellation_error
+        @fiber.kill
+        return @cancellation_error
+      end
+
       fiber_result = @fiber.resume
 
       case fiber_result
@@ -64,6 +69,11 @@ module Ori
 
     def deconstruct
       [await]
+    end
+
+    def cancel(error)
+      @cancellation_error = error
+      resume
     end
   end
 end

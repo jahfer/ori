@@ -2,94 +2,91 @@
 # frozen_string_literal: true
 
 module Ori
-  # Base class for different channel implementations
-  module BaseChannel
+  class Channel
     extend(T::Sig)
     extend(T::Generic)
+    include(Ori::Selectable)
 
     Elem = type_member
+    EMPTY = "empty"
 
-    abstract!
-
-    sig { abstract.params(item: Elem).void }
-    def put(item); end
+    sig { params(size: Integer).void }
+    def initialize(size)
+      @size = size
+      if size.zero?
+        # Zero-sized channel state
+        @taker_waiting = false
+        @sender_waiting = false
+        @value = EMPTY
+      else
+        # Buffered channel state
+        @queue = UnboundedQueue.new
+      end
+    end
 
     sig { params(item: Elem).void }
-    def <<(item) = put(item)
+    def put(item)
+      if @size.zero?
+        put_zero_sized(item)
+      else
+        put_buffered(item)
+      end
+    end
+    alias_method(:<<, :put)
 
-    sig { abstract.returns(Elem) }
-    def peek; end
+    sig { returns(Elem) }
+    def take
+      if @size.zero?
+        take_zero_sized
+      else
+        take_buffered
+      end
+    end
 
-    sig { abstract.returns(Elem) }
-    def take; end
+    sig { returns(Elem) }
+    def peek
+      if @size.zero?
+        peek_zero_sized
+      else
+        peek_buffered
+      end
+    end
 
-    sig { abstract.returns(T::Boolean) }
-    def value?; end
+    sig { returns(T::Boolean) }
+    def value?
+      if @size.zero?
+        @value != EMPTY
+      else
+        @queue.peek != UnboundedQueue::EMPTY
+      end
+    end
+
+    sig { override.returns(Ori::Channel[Elem]) }
+    def await
+      peek
+      self
+    end
 
     sig { returns(T::Array[Elem]) }
     def deconstruct
       Ori.sync { peek }
       [take]
     end
-  end
 
-  class Channel
-    extend(T::Sig)
-    extend(T::Generic)
-    include(BaseChannel)
-    include(Ori::Selectable)
+    private
 
-    Elem = type_member
-
-    sig { params(size: Integer).void }
-    def initialize(size)
-      @chan = if size.zero?
-        ZeroSizedChannel[Elem].new
-      else
-        BufferedChannel[Elem].new(size)
-      end
-    end
-
-    def put(...) = @chan.put(...)
-    def take = @chan.take
-    def peek = @chan.peek
-    def value? = @chan.value?
-
-    def await
-      @chan.peek
-      self
-    end
-  end
-
-  class ZeroSizedChannel
-    extend(T::Sig)
-    extend(T::Generic)
-    include(BaseChannel)
-
-    Elem = type_member
-    EMPTY = "empty"
-
-    sig { override.void }
-    def initialize
-      super
-      @taker_waiting = false
-      @value = EMPTY
-    end
-
-    sig { override.params(item: Elem).void }
-    def put(item)
+    # Zero-sized channel implementation
+    def put_zero_sized(item)
       @sender_waiting = true
       begin
         @value = item
-        # TODO: Communicate blocking condition to scope
         Fiber.yield until @taker_waiting
       ensure
         @taker_waiting = false
       end
     end
 
-    sig { override.returns(Elem) }
-    def take
+    def take_zero_sized
       @taker_waiting = true
       begin
         Fiber.yield(self) until @value != EMPTY
@@ -100,53 +97,25 @@ module Ori
       end
     end
 
-    sig { override.returns(Elem) }
-    def peek
+    def peek_zero_sized
       Fiber.yield(self) until @sender_waiting
       @value
     end
 
-    sig { override.returns(T::Boolean) }
-    def value?
-      @value != EMPTY
-    end
-  end
-
-  class BufferedChannel
-    extend(T::Sig)
-    extend(T::Generic)
-    include(BaseChannel)
-
-    Elem = type_member
-
-    sig { override.params(size: Integer).void }
-    def initialize(size)
-      super()
-      @queue = UnboundedQueue.new
-      @size = size
-    end
-
-    sig { override.params(item: Elem).void }
-    def put(item)
-      Fiber.yield until @queue.size < @size # TODO: Fiber.yield(-> { @queue.size < @size })
+    # Buffered channel implementation
+    def put_buffered(item)
+      Fiber.yield until @queue.size < @size
       @queue.push(item)
     end
 
-    sig { override.returns(Elem) }
-    def take
+    def take_buffered
       Fiber.yield(self) until value?
       @queue.shift
     end
 
-    sig { override.returns(Elem) }
-    def peek
+    def peek_buffered
       Fiber.yield(self) until value?
       @queue.peek
-    end
-
-    sig { override.returns(T::Boolean) }
-    def value?
-      @queue.peek != UnboundedQueue::EMPTY
     end
   end
 

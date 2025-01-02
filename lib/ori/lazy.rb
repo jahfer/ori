@@ -101,6 +101,12 @@ module Ori
 
       internal.reject(&block)
     end
+
+    def values
+      return [] unless initialized?
+
+      internal.values
+    end
   end
 
   class LazyHashSet < LazyEnumerable

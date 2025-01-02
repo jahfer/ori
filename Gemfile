@@ -17,4 +17,3 @@ gem "tapioca", require: false
 gem "debug", ">= 1.0.0", require: false
 
 gem "vernier", git: "https://github.com/jhawthorn/vernier.git"
-gem "allocation_stats"

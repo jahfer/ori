@@ -102,7 +102,7 @@ module Ori
 
       @tracer&.record_scope(@scope_id, :cancelled)
 
-      cause || exn
+      raise(cause || exn)
     end
 
     def tag(name)
@@ -246,8 +246,7 @@ module Ori
         @waiting.any? { |fiber, _| fiber.alive? } ||
         @blocked.any? { |fiber, _| fiber.alive? } ||
         @pending.any?(&:alive?) ||
-        # rubocop:disable Style/SymbolProc (protected method called)
-        child_scopes? && child_scopes.any? { |scope| scope.pending_work? }
+        child_scopes? && child_scopes.any? { |scope| scope.pending_work? } # rubocop:disable Style/SymbolProc (protected method called)
     end
 
     def register_child_scope(scope)
@@ -290,9 +289,7 @@ module Ori
     end
 
     def process_available_work
-      if (error = check_deadline!)
-        return error
-      end
+      check_deadline!
 
       cleanup_dead_fibers
 
@@ -362,9 +359,7 @@ module Ori
     end
 
     def process_timeouts(now = current_time)
-      if (error = check_deadline!)
-        return error
-      end
+      check_deadline!
 
       fibers_to_resume = []
       @waiting.each do |fiber, deadline|
@@ -385,7 +380,7 @@ module Ori
       if current_time >= @deadline_at
         error = CancellationError.new(@deadline_owner)
         shutdown!(error)
-        error
+        raise(error)
       end
     end
 

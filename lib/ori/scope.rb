@@ -21,7 +21,6 @@ module Ori
       end
 
       @cancelled = false
-      @cancel_reason = nil
       @closed = false
 
       @fiber_ids = LazyHash.new
@@ -77,13 +76,12 @@ module Ori
 
     def tracing? = !@tracer.nil?
 
-    def cancellation_error = @cancellation_error ||= CancellationError.new(self, @cancel_reason)
+    def cancellation_error = @cancellation_error ||= CancellationError.new(self)
 
     def shutdown!(cause = nil)
       return if @cancelled
 
       @cancelled = true
-      @cancel_reason = cause
       exn = cause.is_a?(CancellationError) ? cause : cancellation_error
 
       @tracer&.record_scope(@scope_id, :cancelling, exn.message)

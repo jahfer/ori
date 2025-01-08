@@ -6,7 +6,6 @@ loader = Zeitwerk::Loader.for_gem
 loader.setup
 
 require "sorbet-runtime"
-T::Configuration.default_checked_level = :tests
 
 module Ori
   class CancellationError < StandardError

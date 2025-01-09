@@ -35,6 +35,12 @@ module Ori
 
       internal.any?(&block)
     end
+
+    def empty?
+      return true unless initialized?
+
+      internal.empty?
+    end
   end
 
   class LazyArray < LazyEnumerable
@@ -51,7 +57,10 @@ module Ori
       internal.push(value)
     end
 
-    alias_method :[]=, :push
+    def []=(index, value)
+      internal[index] = value
+    end
+
     alias_method :<<, :push
 
     def size
@@ -110,14 +119,14 @@ module Ori
   end
 
   class LazyHashSet < LazyEnumerable
-    INIT = proc { Hash.new(->(hash, key) { hash[key] = Set.new }) }
+    INIT = proc { Hash.new { |hash, key| hash[key] = Set.new } }
 
     def initialize
       super(INIT)
     end
 
     def [](key)
-      internal[key] if initialized?
+      internal[key]
     end
 
     def []=(key, value)
@@ -128,6 +137,16 @@ module Ori
       return true unless initialized?
 
       internal.none?(&block)
+    end
+
+    def keys
+      return [] unless initialized?
+
+      internal.keys
+    end
+
+    def delete(key)
+      internal.delete(key) if initialized?
     end
   end
 end

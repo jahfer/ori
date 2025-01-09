@@ -527,8 +527,9 @@ module Ori
     end
 
     def cleanup_io_wait(fiber, io, added)
-      @readable[io].delete(fiber) if added[:readable]
-      @writable[io].delete(fiber) if added[:writable]
+      # TODO: Check why @...[io] is nil
+      @readable[io]&.delete(fiber) if added[:readable]
+      @writable[io]&.delete(fiber) if added[:writable]
 
       @readable.delete(io) if @readable[io]&.empty?
       @writable.delete(io) if @writable[io]&.empty?

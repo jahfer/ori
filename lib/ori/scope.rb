@@ -7,6 +7,8 @@ require "ori/lazy"
 
 module Ori
   class Scope
+    extend(T::Sig)
+
     # Add thread-local state management
     class ThreadLocalState
       attr_reader :fiber_ids,
@@ -247,7 +249,6 @@ module Ori
 
     protected
 
-    attr_reader :fiber_ids
     attr_reader :scope_id
     attr_reader :deadline_owner
 
@@ -356,10 +357,10 @@ module Ori
     def process_io_operations
       return if readable.none? && writable.none?
 
-      readable, writable = IO.select(readable.keys, writable.keys, [], next_timeout)
+      readable_out, writable_out = IO.select(readable.keys, writable.keys, [], next_timeout)
 
-      process_ready_io(readable, readable)
-      process_ready_io(writable, writable)
+      process_ready_io(readable_out, readable)
+      process_ready_io(writable_out, writable)
     end
 
     def process_ready_io(ready_ios, io_map)
@@ -571,13 +572,29 @@ module Ori
     end
 
     # Update all instance variable references to use state
+
+    sig { returns(LazyHash) }
     def fiber_ids = state.fiber_ids
+
+    sig { returns(LazyHash) }
     def task_queue = state.tasks
+
+    sig { returns(LazyArray) }
     def pending = state.pending
+
+    sig { returns(LazyHashSet) }
     def readable = state.readable
+
+    sig { returns(LazyHashSet) }
     def writable = state.writable
+
+    sig { returns(LazyHash) }
     def waiting = state.waiting
+
+    sig { returns(LazyHash) }
     def blocked = state.blocked
+
+    sig { returns(T::Set[Scope]) }
     def child_scopes = state.child_scopes
   end
 end

@@ -111,6 +111,12 @@ module Ori
       internal.reject(&block)
     end
 
+    def keys
+      return [] unless initialized?
+
+      internal.keys
+    end
+
     def values
       return [] unless initialized?
 

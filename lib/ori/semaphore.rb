@@ -14,9 +14,11 @@ module Ori
 
     def sync
       acquire
-      yield
-    ensure
-      release
+      begin
+        yield
+      ensure
+        release
+      end
     end
 
     def release

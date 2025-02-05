@@ -252,6 +252,9 @@ module Ori
     attr_reader :scope_id
     attr_reader :deadline_owner
 
+    sig { returns(LazyHash) }
+    def fiber_ids = state.fiber_ids
+
     def remaining_deadline
       return unless @deadline_at
 
@@ -343,7 +346,7 @@ module Ori
           fibers_to_resume << fiber if resource.value?
         when Ori::Promise
           fibers_to_resume << fiber if resource.resolved?
-        when Ori::Semaphore
+        when Ori::Semaphore, Ori::ReentrantSemaphore
           fibers_to_resume << fiber if resource.available?
         end
       end
@@ -462,7 +465,8 @@ module Ori
         when CancellationError
           @tracer&.record(id, :cancelled, result.message)
           task_or_fiber.kill
-        when Ori::Channel, Ori::Promise, Ori::Semaphore
+        when Ori::Channel, Ori::Promise, Ori::Semaphore, Ori::ReentrantSemaphore
+          @tracer&.record(id, :resource_wait, result.class.name)
           blocked[fiber] = result
         when Task
           pending << fiber
@@ -572,9 +576,6 @@ module Ori
     end
 
     # Update all instance variable references to use state
-
-    sig { returns(LazyHash) }
-    def fiber_ids = state.fiber_ids
 
     sig { returns(LazyHash) }
     def task_queue = state.tasks

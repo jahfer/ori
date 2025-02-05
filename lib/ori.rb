@@ -29,10 +29,11 @@ module Ori
         name: T.nilable(String),
         cancel_after: T.nilable(Numeric),
         raise_after: T.nilable(Numeric),
+        trace: T::Boolean,
         block: T.proc.params(scope: Scope).void,
       ).returns(Scope)
     end
-    def sync(name: nil, cancel_after: nil, raise_after: nil, &block)
+    def sync(name: nil, cancel_after: nil, raise_after: nil, trace: false, &block)
       deadline = cancel_after || raise_after
       prev_scheduler = Fiber.current_scheduler
 
@@ -40,6 +41,7 @@ module Ori
         prev_scheduler.is_a?(Scope) ? prev_scheduler : nil,
         name,
         deadline,
+        trace,
       )
 
       Fiber.set_scheduler(scope)

@@ -50,7 +50,7 @@ module Ori
       fiber_result = @fiber.resume
 
       case fiber_result
-      when Ori::Channel, Ori::Promise, Ori::Semaphore
+      when Ori::Channel, Ori::Promise, Ori::Semaphore, Ori::ReentrantSemaphore
         fiber_result
       else
         return self if @fiber.alive?

@@ -122,6 +122,12 @@ module Ori
 
       internal.values
     end
+
+    def none?
+      return true unless initialized?
+
+      internal.none?
+    end
   end
 
   class LazyHashSet < LazyEnumerable

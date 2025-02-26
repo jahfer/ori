@@ -152,7 +152,7 @@ module Ori
 
       fiber = Fiber.current
       id = fiber_ids[fiber]
-      @tracer&.record(id, :waiting_io, "#{io.inspect}:#{events}}")
+      @tracer&.record(id, :waiting_io, "#{io.inspect}:#{events}")
 
       added = register_io_wait(fiber, io, events)
       register_timeout(fiber, timeout)
@@ -351,6 +351,8 @@ module Ori
         end
       end
 
+      check_stalled_fibers! if fibers_to_resume.empty?
+
       fibers_to_resume.each do |fiber|
         blocked.delete(fiber)
         resume_fiber(fiber)
@@ -412,6 +414,16 @@ module Ori
       end
     end
 
+    def check_stalled_fibers!
+      return false if blocked.none?
+
+      if pending.empty? && waiting.empty? && readable.empty? && writable.empty?
+        error = CancellationError.new(self, "All fibers are blocked, impossible to proceed")
+        shutdown!(error)
+        raise(error)
+      end
+    end
+
     def next_timeout
       timeouts = T.let([], T::Array[Numeric])
       timeouts.concat(waiting.values.compact) unless waiting.empty?
@@ -466,7 +478,7 @@ module Ori
           @tracer&.record(id, :cancelled, result.message)
           task_or_fiber.kill
         when Ori::Channel, Ori::Promise, Ori::Semaphore, Ori::ReentrantSemaphore
-          @tracer&.record(id, :resource_wait, "#{result.class.name}}")
+          @tracer&.record(id, :resource_wait, result.class.name)
           blocked[fiber] = result
         when Task
           pending << fiber

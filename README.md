@@ -424,8 +424,6 @@ Timeout!
 
 ## Releases
 
-This gem is published to [Cloudsmith](https://cloudsmith.io/~shopify/repos/gems/packages).
-
 The procedure to publish a new release version is as follows:
 
 * Update `lib/ori/version.rb`
@@ -433,7 +431,7 @@ The procedure to publish a new release version is as follows:
 * Open a pull request, review, and merge
 * Review commits since the last release to identify user-facing changes that should be included in the release notes
 * [Create a release on GitHub](https://github.com/Shopify/ori/releases/new) with a version number that matches `lib/ori/version.rb`
-* [Deploy via Shipit](https://shipit.shopify.io/shopify/ori/cloudsmith)
+* Deploy the gem
 
 ## License
 

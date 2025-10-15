@@ -265,13 +265,14 @@ module Ori
     def pending_work?
       return false if closed?
 
-      readable.any? { |_, fibers| fibers.any?(&:alive?) } ||
-        writable.any? { |_, fibers| fibers.any?(&:alive?) } ||
-        # TODO???
-        waiting.any? { |fiber, _| fiber.alive? } ||
-        blocked.any? { |fiber, _| fiber.alive? } ||
-        pending.any?(&:alive?) ||
-        child_scopes? && child_scopes.any? { |scope| scope.pending_work? } # rubocop:disable Style/SymbolProc (protected method called)
+      return true if pending.any?(&:alive?)
+      return true if waiting.any? { |fiber, _| fiber.alive? }
+      return true if blocked.any? { |fiber, _| fiber.alive? }
+      return true if readable.any? { |_, fibers| fibers.any?(&:alive?) }
+      return true if writable.any? { |_, fibers| fibers.any?(&:alive?) }
+      return true if child_scopes? && child_scopes.any? { |scope| scope.pending_work? } # rubocop:disable Style/SymbolProc (protected method called)
+
+      false
     end
 
     def register_child_scope(scope)
@@ -287,13 +288,15 @@ module Ori
     attr_reader :parent_scope
 
     def thread_local_state
+      return @thread_local_state if defined?(@thread_local_state)
+
       state = Thread.current.thread_variable_get(:ori_scope_states)
       if state.nil?
         state = {}
         Thread.current.thread_variable_set(:ori_scope_states, state)
       end
 
-      state
+      @thread_local_state = state
     end
 
     def child_scopes?
@@ -316,14 +319,15 @@ module Ori
     end
 
     def process_available_work
-      check_deadline!
+      now = current_time
+      check_deadline!(now)
 
       cleanup_dead_fibers
 
       process_pending_fibers
       process_blocked_fibers
-      process_io_operations
-      process_timeouts(current_time)
+      process_io_operations(now)
+      process_timeouts(now)
     end
 
     def process_pending_fibers
@@ -359,10 +363,10 @@ module Ori
       end
     end
 
-    def process_io_operations
+    def process_io_operations(now = nil)
       return if readable.none? && writable.none?
 
-      readable_out, writable_out = IO.select(readable.keys, writable.keys, [], next_timeout)
+      readable_out, writable_out = IO.select(readable.keys, writable.keys, [], next_timeout(now))
 
       process_ready_io(readable_out, readable)
       process_ready_io(writable_out, writable)
@@ -404,10 +408,11 @@ module Ori
       end
     end
 
-    def check_deadline!
+    def check_deadline!(now = nil)
       return unless @deadline_at
 
-      if current_time >= @deadline_at
+      now ||= current_time
+      if now >= @deadline_at
         error = CancellationError.new(@deadline_owner)
         shutdown!(error)
         raise(error)
@@ -424,15 +429,16 @@ module Ori
       end
     end
 
-    def next_timeout
+    def next_timeout(now = nil)
       timeouts = T.let([], T::Array[Numeric])
       timeouts.concat(waiting.values.compact) unless waiting.empty?
       timeouts << @deadline_at if @deadline_at
 
       return 0 if timeouts.empty?
 
+      now ||= current_time
       nearest = T.must(timeouts.min)
-      delay = nearest - current_time
+      delay = nearest - now
 
       # Return 0 if the timeout is in the past, otherwise return the delay
       [0, delay].max
@@ -550,9 +556,12 @@ module Ori
       writable.each { |_, fibers| fibers.subtract(dead_fibers) }
       writable.delete_if { |_, fibers| fibers.empty? }
 
-      waiting.delete_if { |fiber, _| !fiber.alive? }
+      waiting.delete_if { |fiber, _| dead_fibers.include?(fiber) }
 
-      dead_fibers.each { |fiber| fiber_ids.delete(fiber) }
+      dead_fibers.each do |fiber|
+        fiber_ids.delete(fiber)
+        task_queue.delete(fiber)
+      end
     end
 
     def cleanup_io_resources

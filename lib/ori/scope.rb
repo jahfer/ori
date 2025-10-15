@@ -1,5 +1,4 @@
 # typed: true
-# frozen_string_literal: true
 
 require "nio"
 require "random/formatter"

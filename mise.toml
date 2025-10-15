@@ -3,6 +3,11 @@ ruby = "3.4.7"
 usage = "latest"
 watchexec = "latest"
 
+[tasks.console]
+description = "Start a REPL using IRB"
+alias = "c"
+run = "bin/console"
+
 [tasks."bundle:install"]
 description = "Install gem dependencies"
 run = "bundle install"
@@ -11,3 +16,17 @@ run = "bundle install"
 description = "Run lint using Rubocop"
 alias = "l"
 run = "bin/rubocop"
+
+[tasks.typecheck]
+description = "Run typecheck using Sorbet"
+alias = "tc"
+run = "srb tc"
+
+[tasks."rbi:update"]
+description = "Update RBI files using Tapioca"
+run = """
+#!/usr/bin/env bash
+bin/tapioca gem &&
+bin/spoom srb bump --from false --to true &&
+bin/spoom srb bump --from true --to strict
+"""

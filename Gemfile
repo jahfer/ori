@@ -14,6 +14,7 @@ gem "rubocop-sorbet", require: false
 gem "sorbet-static-and-runtime", require: false
 gem "spoom", require: false
 gem "tapioca", require: false
+
 gem "debug", ">= 1.0.0", require: false
 
 gem "vernier", git: "https://github.com/jhawthorn/vernier.git"

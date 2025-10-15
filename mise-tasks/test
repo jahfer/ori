@@ -1,0 +1,14 @@
+#!/usr/bin/env -S usage bash
+
+#MISE description="Run tests"
+#MISE alias="t"
+#USAGE arg "<file>" help="Run specific test file" default=""
+#USAGE flag "-n --name <name>" help="Run tests with specific name" default=""
+
+if [ -z "$usage_file" ]; then
+  bin/rake test
+elif [ -z "$usage_name" ]; then
+  ruby -Itest "$usage_file"
+else
+  ruby -Itest "$usage_file" --name "$usage_name"
+fi

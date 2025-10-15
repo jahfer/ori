@@ -1,0 +1,13 @@
+[tools]
+ruby = "3.4.7"
+usage = "latest"
+watchexec = "latest"
+
+[tasks."bundle:install"]
+description = "Install gem dependencies"
+run = "bundle install"
+
+[tasks.style]
+description = "Run lint using Rubocop"
+alias = "l"
+run = "bin/rubocop"

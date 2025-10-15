@@ -5,8 +5,8 @@ require_relative "lib/ori/version"
 Gem::Specification.new do |spec|
   spec.name = "shopify-ori"
   spec.version = Ori::VERSION
-  spec.authors = ["Shopify Engineering"]
-  spec.email   = ["gems@shopify.com"]
+  spec.authors = ["Jahfer Husain", "Shopify Engineering"]
+  spec.email   = ["echo@jahfer.com"]
 
   spec.summary = "Ori is a library for building concurrent applications."
   spec.description = spec.summary

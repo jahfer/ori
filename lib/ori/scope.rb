@@ -355,7 +355,8 @@ module Ori
         end
       end
 
-      check_stalled_fibers! if fibers_to_resume.empty?
+      # TODO: This doesn't work because it only looks in the current scope, not the parents
+      # check_stalled_fibers! if fibers_to_resume.empty?
 
       fibers_to_resume.each do |fiber|
         blocked.delete(fiber)

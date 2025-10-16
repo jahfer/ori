@@ -3,14 +3,14 @@
 require_relative "lib/ori/version"
 
 Gem::Specification.new do |spec|
-  spec.name = "shopify-ori"
+  spec.name = "ori-rb"
   spec.version = Ori::VERSION
-  spec.authors = ["Jahfer Husain", "Shopify Engineering"]
+  spec.authors = ["Jahfer Husain"]
   spec.email   = ["echo@jahfer.com"]
 
   spec.summary = "Ori is a library for building concurrent applications."
   spec.description = spec.summary
-  spec.homepage = "https://github.com/Shopify/ori"
+  spec.homepage = "https://github.com/jahfer/ori"
   spec.required_ruby_version = ">= 3.3"
 
   spec.metadata["allowed_push_host"] = "https://pkgs.shopify.io"

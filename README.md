@@ -25,7 +25,7 @@ Ori provides a set of primitives that allow you to build concurrent applications
 ## Installation
 
 ```ruby
-gem "shopify-ori", "~> 0.2"
+gem "ori-rb", "~> 0.2"
 ```
 
 Then execute:
@@ -42,7 +42,7 @@ require "ori"
 
 ## Usage
 
-Ori aims to make concurrency in Ruby simple, intuitive, and easy to manage. There are only two decisions you need to make when using Ori: 
+Ori aims to make concurrency in Ruby simple, intuitive, and easy to manage. There are only two decisions you need to make when using Ori:
 
 1. What code must complete _before_ other code starts?
 2. What code can run at the same time as other code?
@@ -84,6 +84,7 @@ Success!
 <summary>See trace visualization</summary>
 
 ![Trace visualization](./docs/images/example_boundary.png)
+
 </details>
 
 #### Matching
@@ -140,7 +141,7 @@ end
 
 #### Timeouts and Cancellation
 
-You can also use `Ori.sync` with timeouts to automatically cancel or raise after a specified duration. 
+You can also use `Ori.sync` with timeouts to automatically cancel or raise after a specified duration.
 
 When using `cancel_after: seconds`, the scope will be cancelled but the boundary will close with raising an error. With `raise_after: seconds`, a `Ori::Scope::CancellationError` will be raised from the boundary call site after the specified duration. Both options will properly clean up any internally-spawned fibers and nested scopes.
 
@@ -168,6 +169,7 @@ end
 <summary>See trace visualization</summary>
 
 ![Trace visualization](./docs/images/example_boundary_cancellation.png)
+
 </details>
 
 ### Enumerables
@@ -196,13 +198,13 @@ end
 
 To help understand your program, Ori comes with several utilities to help you visualize the execution of your program, as well as being supported by the broader Ruby ecosystem.
 
-#### Vernier 
+#### Vernier
 
 The HEAD of [jhawthorn/vernier](https://github.com/jhawthorn/vernier) supports tracking the spawning and yielding of fibers, to help analyze your concurrent program over time.
 
 #### Plain-Text Visualization
 
-`Ori::Scope#print_ascii_trace` will print the trace to stdout in plaintext. While useful as a quick overview, it's not interactive and the level of detail is limited. 
+`Ori::Scope#print_ascii_trace` will print the trace to stdout in plaintext. While useful as a quick overview, it's not interactive and the level of detail is limited.
 
 ```ruby
 closed_scope = Ori.sync { ... }
@@ -222,7 +224,7 @@ Legend: (█ Start) (▒ Finish) (═ Running) (~ IO-Wait) (. Sleeping) (╎ Yie
 
 #### HTML Visualization
 
-`Ori::Scope#write_html_trace(dir)` will generate an `index.html` file in the specified directory containing a fully interactive timeline of the scope's execution. 
+`Ori::Scope#write_html_trace(dir)` will generate an `index.html` file in the specified directory containing a fully interactive timeline of the scope's execution.
 
 ![Trace visualization](./docs/images/example_trace.png)
 
@@ -277,6 +279,7 @@ end
 <summary>See trace visualization</summary>
 
 ![Trace visualization](./docs/images/example_promise.png)
+
 </details>
 
 #### `Ori::Channel`
@@ -303,6 +306,7 @@ end
 <summary>See trace visualization</summary>
 
 ![Trace visualization](./docs/images/example_channel.png)
+
 </details>
 
 If a channel has a capacity of `0`, it becomes a simple synchronous queue:
@@ -367,6 +371,7 @@ Without a mutex, the `counter` variable would be read and written in an interlea
 <summary>See trace visualization</summary>
 
 ![Trace visualization](./docs/images/example_mutex.png)
+
 </details>
 
 #### `Ori::Semaphore`
@@ -420,18 +425,19 @@ Timeout!
 <summary>See trace visualization</summary>
 
 ![Trace visualization](./docs/images/example_semaphore.png)
+
 </details>
 
 ## Releases
 
 The procedure to publish a new release version is as follows:
 
-* Update `lib/ori/version.rb`
-* Run bundle install to bump the version of the gem in `Gemfile.lock`
-* Open a pull request, review, and merge
-* Review commits since the last release to identify user-facing changes that should be included in the release notes
-* [Create a release on GitHub](https://github.com/Shopify/ori/releases/new) with a version number that matches `lib/ori/version.rb`
-* Deploy the gem
+- Update `lib/ori/version.rb`
+- Run bundle install to bump the version of the gem in `Gemfile.lock`
+- Open a pull request, review, and merge
+- Review commits since the last release to identify user-facing changes that should be included in the release notes
+- [Create a release on GitHub](https://github.com/jahfer/ori/releases/new) with a version number that matches `lib/ori/version.rb`
+- Deploy the gem
 
 ## License
 

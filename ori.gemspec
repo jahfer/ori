@@ -43,6 +43,5 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   spec.add_dependency("nio4r", "~> 2.7")
-  spec.add_dependency("sorbet", "~> 0.6.0")
   spec.add_dependency("zeitwerk", "~> 2.7.1")
 end

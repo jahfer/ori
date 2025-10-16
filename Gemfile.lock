@@ -7,9 +7,8 @@ GIT
 PATH
   remote: .
   specs:
-    ori-rb (0.4)
+    ori-rb (0.4.2)
       nio4r (~> 2.7)
-      sorbet (~> 0.6.0)
       zeitwerk (~> 2.7.1)
 
 GEM

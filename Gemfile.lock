@@ -9,7 +9,7 @@ PATH
   specs:
     ori-rb (0.4)
       nio4r (~> 2.7)
-      sorbet
+      sorbet (~> 0.6.0)
       zeitwerk (~> 2.7.1)
 
 GEM
@@ -131,7 +131,7 @@ DEPENDENCIES
   rake (~> 13.0)
   rubocop-shopify
   rubocop-sorbet
-  sorbet
+  sorbet (~> 0.6.0)
   spoom
   tapioca
   vernier!

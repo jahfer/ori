@@ -7,7 +7,7 @@ GIT
 PATH
   remote: .
   specs:
-    shopify-ori (0.3)
+    ori-rb (0.4)
       nio4r (~> 2.7)
       sorbet
       zeitwerk (~> 2.7.1)
@@ -127,10 +127,10 @@ PLATFORMS
 DEPENDENCIES
   debug (>= 1.0.0)
   minitest (~> 5.0)
+  ori-rb!
   rake (~> 13.0)
   rubocop-shopify
   rubocop-sorbet
-  shopify-ori!
   sorbet
   spoom
   tapioca

@@ -1,13 +1,9 @@
 # typed: strict
 
 module Ori
+  # @abstract
   module Selectable
-    extend(T::Sig)
-    extend(T::Helpers)
-
-    abstract!
-
-    sig { abstract.returns(T.untyped) }
+    #: () -> untyped
     def await; end
   end
 end

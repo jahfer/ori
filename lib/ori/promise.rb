@@ -1,19 +1,16 @@
 # typed: true
 
 module Ori
+  #: [E]
   class Promise
-    extend(T::Sig)
-    extend(T::Generic)
     include(Ori::Selectable)
-
-    Elem = type_member
 
     def initialize
       @resolved = false
       @value = nil
     end
 
-    sig { params(value: Elem).void }
+    #: (Elem value) -> void
     def resolve(value)
       raise "Promise already resolved" if resolved?
 
@@ -21,7 +18,7 @@ module Ori
       @value = value
     end
 
-    sig { returns(T::Boolean) }
+    #: () -> Boolean
     def resolved?
       @resolved
     end
@@ -31,7 +28,7 @@ module Ori
       [@value]
     end
 
-    sig { override.returns(Elem) }
+    #: () -> E
     def await
       return @value if resolved?
 

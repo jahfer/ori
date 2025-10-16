@@ -4,16 +4,13 @@ require "zeitwerk"
 loader = Zeitwerk::Loader.for_gem
 loader.setup
 
-require "sorbet-runtime"
-
 module Ori
   class CancellationError < StandardError
-    extend(T::Sig)
 
-    sig { returns(Scope) }
+    #: -> Scope
     attr_reader :scope
 
-    sig { params(scope: Scope, message: T.nilable(String)).void }
+    #: (scope: Scope, ?message: String?) -> void
     def initialize(scope, message = "Scope cancelled")
       @scope = scope
       super(message)
@@ -21,17 +18,7 @@ module Ori
   end
 
   class << self
-    extend(T::Sig)
-
-    sig do
-      params(
-        name: T.nilable(String),
-        cancel_after: T.nilable(Numeric),
-        raise_after: T.nilable(Numeric),
-        trace: T::Boolean,
-        block: T.proc.params(scope: Scope).void,
-      ).returns(Scope)
-    end
+    #: (name: String?, cancel_after: Number?, raise_after: Number?, trace: Boolean, &block: (Scope) -> void) -> Scope
     def sync(name: nil, cancel_after: nil, raise_after: nil, trace: false, &block)
       deadline = cancel_after || raise_after
       prev_scheduler = Fiber.current_scheduler
@@ -66,11 +53,12 @@ module Ori
       end
     end
 
-    sig do
-      type_parameters(:U)
-        .params(resources: T::Array[T.all(T.type_parameter(:U), Ori::Selectable)])
-        .returns(T.type_parameter(:U))
-    end
+    # sig do
+    #   type_parameters(:U)
+    #     .params(resources: T::Array[T.all(T.type_parameter(:U), Ori::Selectable)])
+    #     .returns(T.type_parameter(:U))
+    # end
+    #: [U] (Array[U & Selectable] resources) -> U
     def select(resources)
       Ori::Select.await(resources)
     end

@@ -7,11 +7,10 @@ gemspec
 
 # Specify development dependencies here
 gem "minitest", "~> 5.0", require: false
-gem "pry-sorbet", "~> 0.2", require: false
 gem "rake", "~> 13.0"
 gem "rubocop-shopify", require: false
 gem "rubocop-sorbet", require: false
-gem "sorbet-static-and-runtime", require: false
+gem "sorbet", require: false
 gem "spoom", require: false
 gem "tapioca", require: false
 

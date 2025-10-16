@@ -5,7 +5,7 @@ require "test_helper"
 module Ori
   class TaskTest < Minitest::Test
     def test_task_captures_value
-      task = T.let(nil, T.nilable(Task))
+      task = nil #: Task?
 
       Ori.sync do |scope|
         task = scope.fork { :result }
@@ -15,7 +15,7 @@ module Ori
     end
 
     def test_task_captures_error
-      task = T.let(nil, T.nilable(Task))
+      task = nil #: Task?
 
       assert_raises(RuntimeError) do
         Ori.sync do |scope|
@@ -27,7 +27,7 @@ module Ori
     end
 
     def test_task_captures_killed_state
-      task = T.let(nil, T.nilable(Task))
+      task = nil #: Task?
 
       Ori.sync do |scope|
         task = scope.fork { sleep(1) }

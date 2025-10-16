@@ -27,7 +27,7 @@ module Ori
     def test_select_with_semaphore
       promise = Promise.new
       semaphore = Semaphore.new(1)
-      result = T.let(nil, T.nilable(Symbol))
+      result = nil #: Symbol?
 
       Ori.sync do |scope|
         scope.fork { semaphore.sync { sleep(0.1) } }
@@ -64,7 +64,7 @@ module Ori
     def test_select_with_timeout
       promise = Promise.new
       timeout = Timeout.new(0.1)
-      result = T.let(nil, T.nilable(Symbol))
+      result = nil #: Symbol?
 
       Ori.sync do |scope|
         scope.fork do

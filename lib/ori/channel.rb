@@ -1,15 +1,13 @@
 # typed: true
 
 module Ori
+  #: [E]
   class Channel
-    extend(T::Sig)
-    extend(T::Generic)
     include(Ori::Selectable)
 
-    Elem = type_member
     EMPTY = "empty"
 
-    sig { params(size: Integer).void }
+    #: (Integer size) -> void
     def initialize(size)
       @size = size
       if size.zero?
@@ -23,7 +21,7 @@ module Ori
       end
     end
 
-    sig { params(item: Elem).void }
+    #: (E item) -> void
     def put(item)
       if @size.zero?
         put_zero_sized(item)
@@ -33,7 +31,7 @@ module Ori
     end
     alias_method(:<<, :put)
 
-    sig { returns(Elem) }
+    #: () -> E
     def take
       if @size.zero?
         take_zero_sized
@@ -42,7 +40,7 @@ module Ori
       end
     end
 
-    sig { returns(Elem) }
+    #: () -> E
     def peek
       if @size.zero?
         peek_zero_sized
@@ -51,7 +49,7 @@ module Ori
       end
     end
 
-    sig { returns(T::Boolean) }
+    #: () -> Boolean
     def value?
       if @size.zero?
         @value != EMPTY
@@ -60,13 +58,13 @@ module Ori
       end
     end
 
-    sig { override.returns(Ori::Channel[Elem]) }
+    #: () -> Channel[E]
     def await
       peek
       self
     end
 
-    sig { returns(T::Array[Elem]) }
+    #: () -> Array[E]
     def deconstruct
       Ori.sync { peek }
       [take]

@@ -56,7 +56,7 @@ module Ori
 
     def test_sync_block
       sem = ReentrantSemaphore.new(1)
-      result = T.let(nil, T.nilable(String))
+      result = nil #: String?
 
       sem.sync do
         sem.sync do  # Nested sync should work due to reentrancy

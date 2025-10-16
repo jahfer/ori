@@ -5,8 +5,8 @@ require "test_helper"
 module Ori
   class ScopeTest < Minitest::Test
     def test_basic_boundary
-      result = T.let(nil, T.nilable(String))
-      captured_scope = T.let(nil, T.nilable(Scope))
+      result = nil #: String?
+      captured_scope = nil #: Scope?
 
       Ori.sync do |scope|
         captured_scope = scope
@@ -41,7 +41,7 @@ module Ori
     def test_io_operations
       reader, writer = IO.pipe
       message = "hello"
-      received = T.let(nil, T.nilable(String))
+      received = nil #: String?
 
       Ori.sync do |s|
         s.fork do
@@ -112,7 +112,7 @@ module Ori
     end
 
     def test_cancel_after_timeout
-      result = T.let(nil, T.nilable(String))
+      result = nil #: String?
       Ori.sync(cancel_after: 0.1) do |s|
         s.fork do
           result = "A"
@@ -152,7 +152,7 @@ module Ori
     end
 
     def test_timeout_doesnt_affect_completed_operations
-      result = T.let(nil, T.nilable(String))
+      result = nil #: String?
 
       Ori.sync(cancel_after: 0.1) do |s|
         s.fork do

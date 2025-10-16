@@ -6,8 +6,6 @@ require "ori/lazy"
 
 module Ori
   class Scope
-    extend(T::Sig)
-
     # Add thread-local state management
     class ThreadLocalState
       attr_reader :fiber_ids,
@@ -251,7 +249,7 @@ module Ori
     attr_reader :scope_id
     attr_reader :deadline_owner
 
-    sig { returns(LazyHash) }
+    #: () -> LazyHash
     def fiber_ids = state.fiber_ids
 
     def remaining_deadline
@@ -437,7 +435,7 @@ module Ori
       return 0 if timeouts.empty?
 
       now ||= current_time
-      nearest = T.must(timeouts.min)
+      nearest = timeouts.min #: as !nil
       delay = nearest - now
 
       # Return 0 if the timeout is in the past, otherwise return the delay
@@ -527,9 +525,9 @@ module Ori
 
     def register_io_wait(fiber, io, events)
       added = {
-        readable: T.let(false, T::Boolean),
-        writable: T.let(false, T::Boolean),
-      }
+        readable: false,
+        writable: false,
+      } #: Hash[Symbol, Boolean]
 
       if (events & IO::READABLE).nonzero?
         readable[io].add(fiber)
@@ -598,25 +596,25 @@ module Ori
 
     # Update all instance variable references to use state
 
-    sig { returns(LazyHash) }
+    #: () -> LazyHash
     def task_queue = state.tasks
 
-    sig { returns(LazyArray) }
+    #: () -> LazyArray
     def pending = state.pending
 
-    sig { returns(LazyHashSet) }
+    #: () -> LazyHashSet
     def readable = state.readable
 
-    sig { returns(LazyHashSet) }
+    #: () -> LazyHashSet
     def writable = state.writable
 
-    sig { returns(LazyHash) }
+    #: () -> LazyHash
     def waiting = state.waiting
 
-    sig { returns(LazyHash) }
+    #: () -> LazyHash
     def blocked = state.blocked
 
-    sig { returns(T::Set[Scope]) }
+    #: () -> Set[Scope]
     def child_scopes = state.child_scopes
   end
 end

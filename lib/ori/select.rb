@@ -3,13 +3,7 @@
 module Ori
   module Select
     class << self
-      extend(T::Sig)
-
-      sig do
-        type_parameters(:U)
-          .params(resources: T::Array[T.all(T.type_parameter(:U), Ori::Selectable)])
-          .returns(T.type_parameter(:U))
-      end
+      #: [U] (Array[U & Selectable] resources) -> U
       def await(resources)
         # TODO: Check if any resources are already resolved
         # before spawning fibers

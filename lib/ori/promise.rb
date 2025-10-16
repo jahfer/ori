@@ -10,7 +10,7 @@ module Ori
       @value = nil
     end
 
-    #: (Elem value) -> void
+    #: (E value) -> void
     def resolve(value)
       raise "Promise already resolved" if resolved?
 
@@ -18,7 +18,7 @@ module Ori
       @value = value
     end
 
-    #: () -> Boolean
+    #: () -> bool
     def resolved?
       @resolved
     end

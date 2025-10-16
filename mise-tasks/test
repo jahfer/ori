@@ -2,6 +2,7 @@
 
 #MISE description="Run tests"
 #MISE alias="t"
+#MISE depends=["typecheck"]
 #USAGE arg "<file>" help="Run specific test file" default=""
 #USAGE flag "-n --name <name>" help="Run tests with specific name" default=""
 

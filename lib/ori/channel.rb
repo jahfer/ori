@@ -49,7 +49,7 @@ module Ori
       end
     end
 
-    #: () -> Boolean
+    #: () -> bool
     def value?
       if @size.zero?
         @value != EMPTY

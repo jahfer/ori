@@ -20,7 +20,7 @@ run = "bin/rubocop"
 [tasks.typecheck]
 description = "Run typecheck using Sorbet"
 alias = "tc"
-run = "srb tc"
+run = "srb tc --enable-experimental-rbs-comments"
 
 [tasks."rbi:update"]
 description = "Update RBI files using Tapioca"

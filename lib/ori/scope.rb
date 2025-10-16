@@ -527,7 +527,7 @@ module Ori
       added = {
         readable: false,
         writable: false,
-      } #: Hash[Symbol, Boolean]
+      } #: Hash[Symbol, bool]
 
       if (events & IO::READABLE).nonzero?
         readable[io].add(fiber)

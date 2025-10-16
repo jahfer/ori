@@ -7,10 +7,10 @@ loader.setup
 module Ori
   class CancellationError < StandardError
 
-    #: -> Scope
+    #: Scope
     attr_reader :scope
 
-    #: (scope: Scope, ?message: String?) -> void
+    #: (Scope scope, ?String? message) -> void
     def initialize(scope, message = "Scope cancelled")
       @scope = scope
       super(message)
@@ -18,7 +18,7 @@ module Ori
   end
 
   class << self
-    #: (name: String?, cancel_after: Number?, raise_after: Number?, trace: Boolean, &block: (Scope) -> void) -> Scope
+    #: (?name: String?, ?cancel_after: Numeric?, ?raise_after: Numeric?, ?trace: bool) { (Scope) -> void } -> Scope
     def sync(name: nil, cancel_after: nil, raise_after: nil, trace: false, &block)
       deadline = cancel_after || raise_after
       prev_scheduler = Fiber.current_scheduler

@@ -546,7 +546,13 @@ module Ori
       timeouts.concat(waiting.values.compact) unless waiting.empty?
       timeouts << @deadline_at if @deadline_at
 
-      return 0 if timeouts.empty?
+      if timeouts.empty?
+        # No time-based deadlines: block in IO.select until an IO is ready
+        # or the wakeup pipe fires. Use a small poll interval when there are
+        # fibers blocked on non-IO resources (channels, promises, semaphores)
+        # that need periodic checking.
+        return blocked.any? ? 0.1 : nil
+      end
 
       now ||= current_time
       nearest = timeouts.min #: as !nil

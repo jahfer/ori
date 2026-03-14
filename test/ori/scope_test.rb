@@ -1,4 +1,5 @@
 # typed: true
+# frozen_string_literal: true
 
 require "test_helper"
 
@@ -58,6 +59,35 @@ module Ori
       assert_equal(message, received)
     ensure
       [reader, writer].each { |io| io&.close }
+    end
+
+    def test_process_stdout
+      output = nil #: String?
+
+      Ori.sync do |s|
+        s.fork do
+          output = IO.popen(["echo", "hello from process"], "r") { |io| io.read }
+        end
+      end
+
+      assert_equal("hello from process\n", output)
+    end
+
+    def test_concurrent_process_and_fibers
+      results = [] #: Array[String]
+
+      Ori.sync do |s|
+        s.fork do
+          results << IO.popen(["echo", "process"], "r") { |io| io.read.strip }
+        end
+
+        s.fork do
+          results << "fiber"
+        end
+      end
+
+      assert_includes(results, "process")
+      assert_includes(results, "fiber")
     end
 
     def test_deterministic_execution_order

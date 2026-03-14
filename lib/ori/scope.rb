@@ -1,4 +1,5 @@
 # typed: true
+# frozen_string_literal: true
 
 require "nio"
 require "random/formatter"
@@ -50,6 +51,11 @@ module Ori
 
       @cancelled = false
       @closed = false
+
+      # Cross-thread wakeup mechanism for unblock
+      @wakeup_mutex = ::Mutex.new
+      @wakeup_queue = [] #: Array[Fiber]
+      @wakeup_reader, @wakeup_writer = IO.pipe
 
       # Instead, use thread-local storage
       thread_local_state[object_id] = ThreadLocalState.new
@@ -228,19 +234,51 @@ module Ori
     end
 
     def unblock(blocker, fiber)
-      unless fiber_ids.key?(Fiber.current)
+      unless fiber_ids.key?(fiber)
         return @parent_scope.unblock(blocker, fiber) if @parent_scope
       end
 
-      resume_fiber(fiber)
+      # Thread-safe: enqueue the fiber and signal the event loop
+      # via the wakeup pipe. unblock may be called from any thread.
+      @wakeup_mutex.synchronize { @wakeup_queue << fiber }
+      @wakeup_writer.write_nonblock(".") rescue nil # rubocop:disable Style/RescueModifier
     end
 
     # def io_write(...) = ()
     # def io_pread(...) = ()
     # def io_pwrite(...) = ()
 
+    def process_wait(pid, flags)
+      return @parent_scope.process_wait(pid, flags) unless fiber_ids.key?(Fiber.current)
+
+      fiber = Fiber.current
+      id = fiber_ids[fiber]
+      @tracer&.record(id, :waiting_process, "pid=#{pid}")
+
+      # Bridge thread-based process waiting into the IO event loop.
+      # A pipe signals completion; the thread closes its end when done.
+      reader, writer = IO.pipe
+
+      thread = Thread.new(writer) do |w|
+        ::Process::Status.wait(pid, flags)
+      ensure
+        w.syswrite(".") rescue nil # rubocop:disable Style/RescueModifier
+        w.close rescue nil # rubocop:disable Style/RescueModifier
+      end
+
+      # Register directly on the event loop's readable set
+      readable[reader].add(fiber)
+      Fiber.yield
+
+      thread.value
+    ensure
+      readable[reader]&.delete(fiber) if reader
+      readable.delete(reader) if reader && readable[reader]&.empty?
+      reader&.close unless reader&.closed?
+      writer&.close unless writer&.closed?
+    end
+
     # TODO: Implement these
-    # def process_wait(...) = ()
     # def timeout_after(...) = ()
     # def address_resolve(...) = ()
 
@@ -262,6 +300,7 @@ module Ori
     def pending_work?
       return false if closed?
 
+      return true if @wakeup_mutex.synchronize { @wakeup_queue.any? }
       return true if pending.any?(&:alive?)
       return true if waiting.any? { |fiber, _| fiber.alive? }
       return true if blocked.any? { |fiber, _| fiber.alive? }
@@ -362,9 +401,24 @@ module Ori
     end
 
     def process_io_operations(now = nil)
-      return if readable.none? && writable.none?
+      has_io = readable.any? || writable.any?
+      has_wakeup = @wakeup_mutex.synchronize { @wakeup_queue.any? }
 
-      readable_out, writable_out = IO.select(readable.keys, writable.keys, [], next_timeout(now))
+      # Process any already-queued wakeups before selecting
+      drain_wakeup_queue if has_wakeup
+
+      return unless has_io
+
+      select_readable = readable.keys
+      select_readable << @wakeup_reader
+
+      readable_out, writable_out = IO.select(select_readable, writable.keys, [], next_timeout(now))
+
+      # Drain wakeup pipe if signaled
+      if readable_out&.delete(@wakeup_reader)
+        @wakeup_reader.read_nonblock(256) rescue nil # rubocop:disable Style/RescueModifier
+        drain_wakeup_queue
+      end
 
       process_ready_io(readable_out, readable)
       process_ready_io(writable_out, writable)
@@ -378,10 +432,17 @@ module Ori
       end
     end
 
+    def drain_wakeup_queue
+      fibers = @wakeup_mutex.synchronize { @wakeup_queue.shift(@wakeup_queue.size) }
+      fibers.each { |fiber| resume_fiber(fiber) if fiber.alive? }
+    end
+
     def close_scope
       @closed = true
       @tracer&.record_scope(@scope_id, :closed)
       thread_local_state&.delete(object_id)
+      @wakeup_reader&.close unless @wakeup_reader&.closed?
+      @wakeup_writer&.close unless @wakeup_writer&.closed?
     end
 
     # Timeouts and deadlines
@@ -428,7 +489,7 @@ module Ori
     end
 
     def next_timeout(now = nil)
-      timeouts = T.let([], T::Array[Numeric])
+      timeouts = [] #: Array[Numeric]
       timeouts.concat(waiting.values.compact) unless waiting.empty?
       timeouts << @deadline_at if @deadline_at
 

@@ -90,6 +90,49 @@ module Ori
       assert_includes(results, "fiber")
     end
 
+    def test_io_read_with_gets
+      lines = [] #: Array[String]
+
+      Ori.sync do |s|
+        reader, writer = IO.pipe
+
+        s.fork do
+          writer.puts "hello"
+          writer.puts "world"
+          writer.close
+        end
+
+        s.fork do
+          while (line = reader.gets)
+            lines << line.chomp
+          end
+          reader.close
+        end
+      end
+
+      assert_equal(["hello", "world"], lines)
+    end
+
+    def test_io_write_through_scheduler
+      result = nil #: String?
+
+      Ori.sync do |s|
+        reader, writer = IO.pipe
+
+        s.fork do
+          writer.write("scheduled write")
+          writer.close
+        end
+
+        s.fork do
+          result = reader.read
+          reader.close
+        end
+      end
+
+      assert_equal("scheduled write", result)
+    end
+
     def test_deterministic_execution_order
       sequence = []
       Ori.sync do |s|

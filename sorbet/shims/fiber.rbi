@@ -11,6 +11,13 @@ class Fiber
 
     sig { returns(T.untyped) }
     def current_scheduler; end
+
+    sig do
+      type_parameters(:T)
+        .params(block: T.proc.returns(T.type_parameter(:T)))
+        .returns(T.type_parameter(:T))
+    end
+    def blocking(&block); end
   end
 
   sig { params(block: T.proc.void).void }

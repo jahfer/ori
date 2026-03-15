@@ -2,8 +2,10 @@
 # frozen_string_literal: true
 
 require "nio"
+require "io/nonblock"
 require "random/formatter"
 require "ori/lazy"
+require "English"
 
 module Ori
   class Scope
@@ -244,7 +246,57 @@ module Ori
       @wakeup_writer.write_nonblock(".") rescue nil # rubocop:disable Style/RescueModifier
     end
 
-    # def io_write(...) = ()
+    def io_read(io, buffer, length, offset)
+      return @parent_scope.io_read(io, buffer, length, offset) unless fiber_ids.key?(Fiber.current)
+
+      io.nonblock = true unless io.closed?
+      total = 0 #: Integer
+
+      loop do
+        maximum_size = buffer.size - offset - total
+        break if maximum_size <= 0
+
+        case result = Fiber.blocking { io.read_nonblock(maximum_size, exception: false) }
+        when :wait_readable
+          break if total > 0
+
+          io_wait(io, IO::READABLE)
+        when nil # EOF
+          break
+        else
+          buffer.set_string(result, offset + total)
+          total += result.bytesize
+          break if length == 0 || total >= length
+        end
+      end
+
+      total
+    rescue SystemCallError => e
+      (total || 0) > 0 ? total : -(e.errno || 0)
+    end
+
+    def io_write(io, buffer, length, offset)
+      return @parent_scope.io_write(io, buffer, length, offset) unless fiber_ids.key?(Fiber.current)
+
+      io.nonblock = true unless io.closed?
+      total = 0 #: Integer
+      max_bytes = buffer.size - offset
+
+      while total < max_bytes
+        chunk = buffer.get_string(offset + total, max_bytes - total)
+        case result = Fiber.blocking { io.write_nonblock(chunk, exception: false) }
+        when :wait_writable
+          io_wait(io, IO::WRITABLE)
+        else
+          total += result
+        end
+      end
+
+      total
+    rescue SystemCallError => e
+      (total || 0) > 0 ? total : -(e.errno || 0)
+    end
+
     # def io_pread(...) = ()
     # def io_pwrite(...) = ()
 
@@ -260,7 +312,8 @@ module Ori
       reader, writer = IO.pipe
 
       thread = Thread.new(writer) do |w|
-        ::Process::Status.wait(pid, flags)
+        ::Process.wait(pid, flags)
+        $CHILD_STATUS # return the Process::Status
       ensure
         w.syswrite(".") rescue nil # rubocop:disable Style/RescueModifier
         w.close rescue nil # rubocop:disable Style/RescueModifier

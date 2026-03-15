@@ -11,6 +11,8 @@ class VoxtralProcess
 
   attr_reader :transcript_io, :status_io
 
+  STATUS_PATTERN = /loading|loaded|listening|stopping|error|warning/i
+
   def initialize(interval: 1.0)
     @transcript_io, transcript_writer = IO.pipe
     @status_io, status_writer = IO.pipe
@@ -68,8 +70,10 @@ class SentenceTokenizer
     buf = +""
     loop do
       buf << @io.readpartial(4096)
+      print(".")
 
       while (match = buf.match(SENTENCE_END))
+        puts ""
         sentence = match[1].strip
         buf = match[2]
         yield sentence unless sentence.empty?
@@ -90,14 +94,21 @@ voxtral = VoxtralProcess.new(interval: 1.0)
 Ori.sync do |scope|
   transcript = Ori::Channel.new(100)
 
-  # Monitor voxtral's stderr for status updates
+  # Monitor voxtral's stderr for status updates (via readpartial, not gets)
   scope.fork do
-    while (line = voxtral.status_io.gets)
-      line = line.strip
-      $stderr.puts "[voxtral] #{line}" if line.match?(/loading|loaded|listening|stopping|error|warning/i)
+    buf = +""
+    loop do
+      buf << voxtral.status_io.readpartial(4096)
+
+      while (idx = buf.index("\n"))
+        line = buf.slice!(0, idx + 1).strip
+        $stderr.puts "[voxtral] #{line}" if line.match?(VoxtralProcess::STATUS_PATTERN)
+      end
+    rescue EOFError
+      line = buf.strip
+      $stderr.puts "[voxtral] #{line}" if !line.empty? && line.match?(VoxtralProcess::STATUS_PATTERN)
+      break
     end
-  rescue EOFError
-    # voxtral exited
   end
 
   # Read transcript chunks, split into sentences, push to channel
@@ -111,6 +122,7 @@ Ori.sync do |scope|
   scope.fork do
     loop do
       sentence = transcript.take
+      puts "Original: #{sentence}"
       puts sentence.split.map { |w| w == w.upcase ? w : w.capitalize }.join(" ")
     end
   end

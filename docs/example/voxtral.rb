@@ -3,57 +3,40 @@
 
 require_relative "../../lib/ori"
 
-# Manages a voxtral STT subprocess, providing separate IO streams for
-# transcript data (stdout) and status messages (stderr).
+# Manages a voxtral STT subprocess. With io_read/io_write/process_wait
+# implemented in the scheduler, we can spawn directly and hand the raw
+# IO pipes to Ori fibers — no bridge thread needed.
 class VoxtralProcess
   VOXTRAL_BIN = "/Users/jahfer/src/github.com/antirez/voxtral.c/voxtral"
   VOXTRAL_MODEL = "/Users/jahfer/src/github.com/antirez/voxtral.c/voxtral-model"
 
-  attr_reader :transcript_io, :status_io
+  attr_reader :stdout_io, :stderr_io, :pid
 
   STATUS_PATTERN = /loading|loaded|listening|stopping|error|warning/i
 
   def initialize(interval: 1.0)
-    @transcript_io, transcript_writer = IO.pipe
-    @status_io, status_writer = IO.pipe
-    stdout_reader, stdout_writer = IO.pipe
+    @stdout_io, stdout_writer = IO.pipe
+    @stderr_io, stderr_writer = IO.pipe
 
-    @thread = Thread.new do
-      @pid = Process.spawn(
-        VOXTRAL_BIN,
-        "-d",
-        VOXTRAL_MODEL,
-        "--from-mic",
-        "--silent",
-        "-I",
-        interval.to_s,
-        out: stdout_writer,
-        err: status_writer,
-      )
-      stdout_writer.close
-      status_writer.close
+    @pid = Process.spawn(
+      VOXTRAL_BIN,
+      "-d",
+      VOXTRAL_MODEL,
+      "--from-mic",
+      "--silent",
+      "-I",
+      interval.to_s,
+      out: stdout_writer,
+      err: stderr_writer,
+    )
 
-      loop do
-        transcript_writer.write(stdout_reader.readpartial(4096))
-        transcript_writer.flush
-      rescue EOFError
-        break
-      end
-
-      Process.wait(@pid)
-    ensure
-      transcript_writer.close
-      stdout_reader.close unless stdout_reader.closed?
-      stdout_writer.close unless stdout_writer.closed?
-      status_writer.close unless status_writer.closed?
-    end
+    stdout_writer.close
+    stderr_writer.close
   end
 
-  def join = @thread.join
-
   def close
-    @transcript_io.close unless @transcript_io.closed?
-    @status_io.close unless @status_io.closed?
+    @stdout_io.close unless @stdout_io.closed?
+    @stderr_io.close unless @stderr_io.closed?
   end
 end
 
@@ -94,26 +77,16 @@ voxtral = VoxtralProcess.new(interval: 1.0)
 Ori.sync do |scope|
   transcript = Ori::Channel.new(100)
 
-  # Monitor voxtral's stderr for status updates (via readpartial, not gets)
+  # Monitor voxtral's stderr for status updates
   scope.fork do
-    buf = +""
-    loop do
-      buf << voxtral.status_io.readpartial(4096)
-
-      while (idx = buf.index("\n"))
-        line = buf.slice!(0, idx + 1).strip
-        $stderr.puts "[voxtral] #{line}" if line.match?(VoxtralProcess::STATUS_PATTERN)
-      end
-    rescue EOFError
-      line = buf.strip
-      $stderr.puts "[voxtral] #{line}" if !line.empty? && line.match?(VoxtralProcess::STATUS_PATTERN)
-      break
+    voxtral.stderr_io.each_line do |line|
+      $stderr.puts "[voxtral] #{line.strip}" if line.match?(VoxtralProcess::STATUS_PATTERN)
     end
   end
 
   # Read transcript chunks, split into sentences, push to channel
   scope.fork do
-    SentenceTokenizer.new(voxtral.transcript_io).each_sentence do |sentence|
+    SentenceTokenizer.new(voxtral.stdout_io).each_sentence do |sentence|
       transcript << sentence
     end
   end
@@ -126,7 +99,11 @@ Ori.sync do |scope|
       puts sentence.split.map { |w| w == w.upcase ? w : w.capitalize }.join(" ")
     end
   end
+
+  # Wait for the voxtral process to exit (non-blocking via process_wait)
+  scope.fork do
+    Process.wait(voxtral.pid)
+  end
 end
 
 voxtral.close
-voxtral.join

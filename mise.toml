@@ -32,8 +32,9 @@ bin/spoom srb bump --from true --to strict
 """
 
 [tasks.'gem:build']
+depends = "bundle:install"
 description = "Build the gem"
-run = "gem build && mkdir -p pkg && rm -f pkg/* && mv ori-rb-* pkg/"
+run = "bundle exec gem build && mkdir -p pkg && rm -f pkg/* && mv ori-rb-* pkg/"
 
 [tasks.'gem:publish']
 description = "Publish the gem"

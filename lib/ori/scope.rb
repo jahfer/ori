@@ -54,9 +54,10 @@ module Ori
       @cancelled = false
       @closed = false
 
-      # Cross-thread wakeup mechanism for unblock
+      # Cross-thread wakeup mechanism for unblock and fiber_interrupt
       @wakeup_mutex = ::Mutex.new
       @wakeup_queue = [] #: Array[Fiber]
+      @pending_interrupts = {} #: Hash[Fiber, Exception]
       @wakeup_reader, @wakeup_writer = IO.pipe
 
       # Instead, use thread-local storage
@@ -79,6 +80,9 @@ module Ori
         process_available_work
         Fiber.yield if parent_scope && pending_work?
       end
+    rescue Interrupt => error
+      puts "Scope interrupted! Shutting down..."
+      shutdown!(error)
     ensure
       close_scope
       @parent_scope&.deregister_child_scope(self)
@@ -174,8 +178,8 @@ module Ori
         0
       end
     ensure
-      cleanup_io_wait(fiber, io, added)
-      cleanup_timeout(fiber) if timeout
+      cleanup_io_wait(fiber, io, added) if added
+      cleanup_timeout(fiber) if timeout && fiber
     end
 
     def io_select(readables, writables, exceptables, timeout)
@@ -224,7 +228,7 @@ module Ori
         Fiber.yield
       end
     ensure
-      cleanup_timeout(fiber)
+      cleanup_timeout(fiber) if fiber
     end
 
     def block(...)
@@ -243,6 +247,14 @@ module Ori
       # Thread-safe: enqueue the fiber and signal the event loop
       # via the wakeup pipe. unblock may be called from any thread.
       @wakeup_mutex.synchronize { @wakeup_queue << fiber }
+      @wakeup_writer.write_nonblock(".") rescue nil # rubocop:disable Style/RescueModifier
+    end
+
+    def fiber_interrupt(fiber, exception)
+      @wakeup_mutex.synchronize do
+        @pending_interrupts[fiber] = exception
+        @wakeup_queue << fiber
+      end
       @wakeup_writer.write_nonblock(".") rescue nil # rubocop:disable Style/RescueModifier
     end
 
@@ -486,8 +498,39 @@ module Ori
     end
 
     def drain_wakeup_queue
-      fibers = @wakeup_mutex.synchronize { @wakeup_queue.shift(@wakeup_queue.size) }
-      fibers.each { |fiber| resume_fiber(fiber) if fiber.alive? }
+      interrupts = nil
+      fibers = @wakeup_mutex.synchronize do
+        unless @pending_interrupts.empty?
+          interrupts = @pending_interrupts.dup
+          @pending_interrupts.clear
+        end
+        @wakeup_queue.shift(@wakeup_queue.size)
+      end
+
+      fibers.each do |fiber|
+        next unless fiber.alive?
+
+        if (exception = interrupts&.delete(fiber))
+          interrupt_fiber(fiber, exception)
+        else
+          resume_fiber(fiber)
+        end
+      end
+    end
+
+    def interrupt_fiber(fiber, exception)
+      id = fiber_ids[fiber]
+      @tracer&.record(id, :interrupted, exception.message)
+
+      # Remove from wait states before cancelling
+      waiting.delete(fiber)
+      blocked.delete(fiber)
+
+      if (task = task_queue[fiber])
+        task.cancel(exception)
+      else
+        fiber.kill
+      end
     end
 
     def close_scope
@@ -691,15 +734,19 @@ module Ori
     end
 
     def cleanup_io_wait(fiber, io, added)
-      readable[io].delete(fiber) if added[:readable]
-      writable[io].delete(fiber) if added[:writable]
+      state = thread_local_state&.[](object_id)
+      return unless state
 
-      readable.delete(io) if readable[io]&.empty?
-      writable.delete(io) if writable[io]&.empty?
+      state.readable[io]&.delete(fiber) if added[:readable]
+      state.writable[io]&.delete(fiber) if added[:writable]
+
+      state.readable.delete(io) if state.readable[io]&.empty?
+      state.writable.delete(io) if state.writable[io]&.empty?
     end
 
     def cleanup_timeout(fiber)
-      waiting.delete(fiber)
+      state = thread_local_state&.[](object_id)
+      state&.waiting&.delete(fiber)
     end
 
     # Add helper method to access thread-local state

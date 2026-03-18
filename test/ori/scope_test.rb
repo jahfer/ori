@@ -257,5 +257,84 @@ module Ori
 
       assert_equal(:in_task_a, result)
     end
+
+    def test_fiber_interrupt_cancels_task
+      result = nil #: Symbol?
+
+      Ori.sync do |scope|
+        task = scope.fork do
+          result = :started
+          sleep(10)
+          result = :finished
+        end
+
+        scope.fork do
+          scope.fiber_interrupt(task.fiber, RuntimeError.new("interrupted"))
+        end
+      end
+
+      assert_equal(:started, result)
+    end
+
+    def test_fiber_interrupt_from_another_thread
+      result = nil #: Symbol?
+
+      Ori.sync do |scope|
+        task = scope.fork do
+          result = :started
+          sleep(10)
+          result = :finished
+        end
+
+        Thread.new do
+          sleep(0.05)
+          scope.fiber_interrupt(task.fiber, RuntimeError.new("cross-thread interrupt"))
+        end
+      end
+
+      assert_equal(:started, result)
+    end
+
+    def test_fiber_interrupt_unblocks_waiting_fiber
+      results = [] #: Array[Symbol]
+
+      Ori.sync do |scope|
+        ch = Channel.new(0)
+
+        task = scope.fork do
+          results << :waiting
+          ch.take
+          results << :took
+        end
+
+        scope.fork do
+          scope.fiber_interrupt(task.fiber, RuntimeError.new("stop waiting"))
+        end
+      end
+
+      assert_equal([:waiting], results)
+    end
+
+    def test_unblock_resumes_fiber_via_wakeup_pipe
+      result = nil #: String?
+
+      Ori.sync do |scope|
+        reader, writer = IO.pipe
+
+        scope.fork do
+          reader.read(1)
+          result = "resumed"
+          reader.close
+        end
+
+        Thread.new do
+          sleep(0.05)
+          writer.write(".")
+          writer.close
+        end
+      end
+
+      assert_equal("resumed", result)
+    end
   end
 end

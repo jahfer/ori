@@ -7,7 +7,7 @@ GIT
 PATH
   remote: .
   specs:
-    ori-rb (0.4.5)
+    ori-rb (0.4.6)
       nio4r (~> 2.7)
       zeitwerk (~> 2.7.1)
 

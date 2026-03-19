@@ -432,12 +432,25 @@ Timeout!
 
 The procedure to publish a new release version is as follows:
 
-- Update `lib/ori/version.rb`
-- Run bundle install to bump the version of the gem in `Gemfile.lock`
-- Open a pull request, review, and merge
-- Review commits since the last release to identify user-facing changes that should be included in the release notes
-- [Create a release on GitHub](https://github.com/jahfer/ori/releases/new) with a version number that matches `lib/ori/version.rb`
-- Deploy the gem
+1. Bump the version and commit:
+
+   ```sh
+   mise run version:bump <VERSION>
+   ```
+
+   This updates `lib/ori/version.rb`, runs `bundle install` to update `Gemfile.lock`, commits with message `v<VERSION>`, and creates an annotated tag.
+
+2. Review the commit to confirm the version is correct.
+
+3. Push, build, and publish:
+
+   ```sh
+   mise run release
+   ```
+
+   This pushes the commit and tag to origin, builds the gem, and publishes it to RubyGems.
+
+4. [Create a release on GitHub](https://github.com/jahfer/ori/releases/new) with a version number that matches `lib/ori/version.rb`, including release notes for user-facing changes since the last release.
 
 ## License
 

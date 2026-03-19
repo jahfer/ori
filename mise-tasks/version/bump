@@ -1,0 +1,40 @@
+#!/usr/bin/env -S usage bash
+
+#MISE description="Bump the gem version, run bundle install, and commit with a tag"
+#USAGE arg "<version>" help="New version number (e.g. 0.5.0)"
+
+set -euo pipefail
+
+VERSION="$usage_version"
+VERSION_FILE="lib/ori/version.rb"
+
+# Validate version format
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Error: Version must be in the format X.Y.Z (e.g. 0.5.0)"
+  exit 1
+fi
+
+# Check for uncommitted changes
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "Error: You have uncommitted changes. Please commit or stash them first."
+  exit 1
+fi
+
+echo "Bumping to v${VERSION}..."
+
+# Update version.rb
+sed -i '' "s/VERSION = \".*\"/VERSION = \"${VERSION}\"/" "$VERSION_FILE"
+echo "Updated ${VERSION_FILE} to ${VERSION}"
+
+# Run bundle install to update Gemfile.lock
+bundle install
+echo "Updated Gemfile.lock"
+
+# Commit and tag
+git add "$VERSION_FILE" Gemfile.lock
+git commit -m "v${VERSION}"
+git tag -a "v${VERSION}" -m "v${VERSION}"
+echo "Created commit and tag v${VERSION}"
+
+echo ""
+echo "Version bump complete. Review the commit, then run 'mise run release' to publish."

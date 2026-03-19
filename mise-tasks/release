@@ -1,0 +1,20 @@
+#!/usr/bin/env -S usage bash
+
+#MISE description="Push, build, and publish the gem (run version:bump first)"
+
+set -euo pipefail
+
+VERSION_FILE="lib/ori/version.rb"
+VERSION=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$VERSION_FILE")
+
+echo "Publishing v${VERSION}..."
+
+# Push commit and tag
+git push && git push --tags
+echo "Pushed to origin"
+
+# Build and publish
+mise run gem:build
+mise run gem:publish
+
+echo "Released v${VERSION} successfully!"

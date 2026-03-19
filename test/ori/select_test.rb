@@ -102,6 +102,48 @@ module Ori
       assert_equal(:task_b, result)
     end
 
+    def test_select_with_broadcast_subscription
+      promise = Promise.new
+      broadcast = Broadcast.new
+      sub = broadcast.subscribe
+      result = nil
+
+      Ori.sync do |scope|
+        scope.fork do
+          sleep(0.1)
+          broadcast << :event
+        end
+
+        result = case Select.await([promise, sub])
+        in Promise(_) then raise "Should not happen"
+        in Broadcast::Subscription(value) then value
+        end
+      end
+
+      assert_equal(:event, result)
+    end
+
+    def test_select_broadcast_vs_timeout
+      broadcast = Broadcast.new
+      sub = broadcast.subscribe
+      timeout = Timeout.new(0.1)
+      result = nil #: Symbol?
+
+      Ori.sync do |scope|
+        scope.fork do
+          sleep(0.2)
+          broadcast << :too_late
+        end
+
+        result = case Select.await([sub, timeout])
+        in Broadcast::Subscription(_) then raise "Should not happen"
+        in Timeout then :timeout
+        end
+      end
+
+      assert_equal(:timeout, result)
+    end
+
     def test_concurrent_sleep_and_pending_io
       Ori.sync(cancel_after: 5) do |scope|
         r, w = IO.pipe

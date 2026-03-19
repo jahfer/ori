@@ -19,6 +19,7 @@ Ori provides a set of primitives that allow you to build concurrent applications
     - [`Ori::Mutex`](#orimutex)
     - [`Ori::Semaphore`](#orisemaphore)
     - [`Ori::Timeout`](#oritimeout)
+    - [`Ori::Broadcast`](#oribroadcast)
 - [Releases](#releases)
 - [License](#license)
 
@@ -427,6 +428,67 @@ Timeout!
 ![Trace visualization](./docs/images/example_semaphore.png)
 
 </details>
+
+#### `Ori::Broadcast`
+
+Broadcast provides fan-out message delivery to multiple subscribers. Unlike a `Channel`, where each message is consumed by a single reader, every subscriber to a `Broadcast` receives every message published after they subscribe:
+
+```ruby
+Ori.sync do |scope|
+  broadcast = Ori::Broadcast.new
+  sub1 = broadcast.subscribe
+  sub2 = broadcast.subscribe
+
+  # Publisher
+  scope.fork do
+    broadcast << "Hello"
+    broadcast << "World"
+  end
+
+  # Both subscribers receive all messages
+  scope.fork do
+    2.times { puts "Sub 1: #{sub1.take}" }
+  end
+
+  scope.fork do
+    2.times { puts "Sub 2: #{sub2.take}" }
+  end
+end
+```
+
+**Output:**
+
+```
+Sub 1: Hello
+Sub 2: Hello
+Sub 1: World
+Sub 2: World
+```
+
+Subscriptions work with `Ori.select` and pattern matching:
+
+```ruby
+Ori.sync do |scope|
+  broadcast = Ori::Broadcast.new
+  sub = broadcast.subscribe
+  timeout = Ori::Timeout.new(0.5)
+
+  scope.fork { broadcast << :event }
+
+  case Ori.select([sub, timeout])
+  in Ori::Broadcast::Subscription(value) then puts "Got: #{value}"
+  in Ori::Timeout then puts "No events"
+  end
+end
+```
+
+Subscribers can unsubscribe at any time to stop receiving future messages:
+
+```ruby
+sub = broadcast.subscribe
+# ...
+sub.unsubscribe
+```
 
 ## Releases
 

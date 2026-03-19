@@ -457,7 +457,7 @@ module Ori
       # TODO: shuffle blocked before processing?
       blocked.each do |fiber, resource|
         case resource
-        when Ori::Channel
+        when Ori::Channel, Ori::Broadcast::Subscription
           fibers_to_resume << fiber if resource.value?
         when Ori::Promise
           fibers_to_resume << fiber if resource.resolved?
@@ -621,7 +621,7 @@ module Ori
         when CancellationError
           @tracer&.record(id, :cancelled, result.message)
           task_or_fiber.kill
-        when Ori::Channel, Ori::Promise, Ori::Semaphore, Ori::ReentrantSemaphore
+        when Ori::Channel, Ori::Promise, Ori::Semaphore, Ori::ReentrantSemaphore, Ori::Broadcast::Subscription
           @tracer&.record(id, :resource_wait, result.class.name)
           blocked[fiber] = result
         when Task

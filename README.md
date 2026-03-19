@@ -26,7 +26,7 @@ Ori provides a set of primitives that allow you to build concurrent applications
 ## Installation
 
 ```ruby
-gem "ori-rb", "~> 0.4.6"
+gem "ori-rb", "~> 0.4.8"
 ```
 
 Then execute:

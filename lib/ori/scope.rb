@@ -498,7 +498,7 @@ module Ori
     end
 
     def drain_wakeup_queue
-      interrupts = nil
+      interrupts = nil #: Hash[Fiber, Exception]?
       fibers = @wakeup_mutex.synchronize do
         unless @pending_interrupts.empty?
           interrupts = @pending_interrupts.dup
@@ -519,18 +519,11 @@ module Ori
     end
 
     def interrupt_fiber(fiber, exception)
-      id = fiber_ids[fiber]
-      @tracer&.record(id, :interrupted, exception.message)
-
       # Remove from wait states before cancelling
       waiting.delete(fiber)
       blocked.delete(fiber)
 
-      if (task = task_queue[fiber])
-        task.cancel(exception)
-      else
-        fiber.kill
-      end
+      cancel_fiber!(fiber, exception)
     end
 
     def close_scope
@@ -664,8 +657,6 @@ module Ori
       if (task = task_queue[fiber])
         task.cancel(error)
       else
-        # For raw fibers, we still need to resume them one last time
-        # to give them a chance to cleanup
         fiber.raise(error)
       end
 

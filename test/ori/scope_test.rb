@@ -336,5 +336,115 @@ module Ori
 
       assert_equal("resumed", result)
     end
+
+    def test_deadlock_detected_single_scope_channel
+      assert_raises(DeadlockError) do
+        Ori.sync do |scope|
+          ch = Channel.new(0)
+
+          scope.fork { ch.take }
+          scope.fork { ch.take }
+        end
+      end
+    end
+
+    def test_deadlock_detected_single_scope_promise
+      assert_raises(DeadlockError) do
+        Ori.sync do |scope|
+          p1 = Promise.new
+          p2 = Promise.new
+
+          scope.fork { p1.await }
+          scope.fork { p2.await }
+        end
+      end
+    end
+
+    def test_deadlock_detected_single_scope_semaphore
+      assert_raises(DeadlockError) do
+        Ori.sync do |scope|
+          sem = Semaphore.new(1)
+
+          scope.fork do
+            sem.acquire
+            Fiber.yield
+          end
+
+          scope.fork { sem.acquire }
+          scope.fork { sem.acquire }
+        end
+      end
+    end
+
+    def test_deadlock_detected_across_nested_scopes
+      assert_raises(DeadlockError) do
+        Ori.sync do |outer|
+          ch = Channel.new(0)
+
+          outer.fork { ch.take }
+
+          Ori.sync do |inner|
+            inner.fork { ch.take }
+          end
+        end
+      end
+    end
+
+    def test_no_false_deadlock_when_work_remains
+      result = nil #: Integer?
+
+      Ori.sync do |scope|
+        ch = Channel.new(1)
+
+        scope.fork { ch.put(42) }
+        scope.fork { result = ch.take }
+      end
+
+      assert_equal(42, result)
+    end
+
+    def test_no_false_deadlock_with_io_pending
+      result = nil #: String?
+
+      Ori.sync do |scope|
+        ch = Channel.new(0)
+        reader, writer = IO.pipe
+
+        scope.fork do
+          data = reader.read(1)
+          ch.put(data)
+        end
+
+        scope.fork do
+          result = ch.take
+        end
+
+        scope.fork do
+          writer.write("x")
+          writer.close
+        end
+      end
+
+      assert_equal("x", result)
+    end
+
+    def test_no_false_deadlock_with_timer_pending
+      result = nil #: Symbol?
+
+      Ori.sync do |scope|
+        ch = Channel.new(0)
+
+        scope.fork do
+          sleep(0.01)
+          ch.put(:done)
+        end
+
+        scope.fork do
+          result = ch.take
+        end
+      end
+
+      assert_equal(:done, result)
+    end
   end
 end

@@ -222,6 +222,9 @@ module Ori
         return @parent_scope.block(...) if @parent_scope
       end
 
+      # TODO: Track blocked fibers separately so we don't
+      # try to resume them indefinitely prior to unblock
+
       Fiber.yield
     end
 
@@ -361,6 +364,24 @@ module Ori
       false
     end
 
+    def root_scope
+      @parent_scope ? @parent_scope.root_scope : self
+    end
+
+    # Purposefully excludes blocked fibers from checks
+    def has_active_work?
+      return false if closed?
+
+      return true if @wakeup_mutex.synchronize { @wakeup_queue.any? }
+      return true if pending.any?(&:alive?)
+      return true if waiting.any? { |fiber, _| fiber.alive? }
+      return true if readable.any? { |_, fibers| fibers.any?(&:alive?) }
+      return true if writable.any? { |_, fibers| fibers.any?(&:alive?) }
+      return true if child_scopes? && child_scopes.any? { |scope| scope.has_active_work? }
+
+      false
+    end
+
     def register_child_scope(scope)
       child_scopes.add(scope)
     end
@@ -430,8 +451,7 @@ module Ori
         end
       end
 
-      # TODO: This doesn't work because it only looks in the current scope, not the parents
-      # check_stalled_fibers! if fibers_to_resume.empty?
+      check_stalled_fibers! if fibers_to_resume.empty?
 
       fibers_to_resume.each do |fiber|
         blocked.delete(fiber)
@@ -537,12 +557,11 @@ module Ori
 
     def check_stalled_fibers!
       return false if blocked.none?
+      return false if root_scope.has_active_work?
 
-      if pending.empty? && waiting.empty? && readable.empty? && writable.empty?
-        error = CancellationError.new(self, "All fibers are blocked, impossible to proceed")
-        shutdown!(error)
-        raise(error)
-      end
+      error = DeadlockError.new(self)
+      shutdown!(error)
+      raise(error)
     end
 
     def next_timeout(now = nil)

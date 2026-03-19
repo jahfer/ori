@@ -6,7 +6,6 @@ loader.setup
 
 module Ori
   class CancellationError < StandardError
-
     #: Scope
     attr_reader :scope
 
@@ -14,6 +13,13 @@ module Ori
     def initialize(scope, message = "Scope cancelled")
       @scope = scope
       super(message)
+    end
+  end
+
+  class DeadlockError < CancellationError
+    #: (Scope scope, ?String? message) -> void
+    def initialize(scope, message = "All fibers are blocked, impossible to proceed")
+      super(scope, message)
     end
   end
 
@@ -41,6 +47,8 @@ module Ori
 
         scope.await
         scope
+      rescue DeadlockError
+        raise
       rescue CancellationError => error
         # Re-raise if:
         # 1. The error is from a different scope, or

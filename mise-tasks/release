@@ -1,4 +1,4 @@
-#!/usr/bin/env -S usage bash
+#!/usr/bin/env bash
 
 #MISE description="Push, build, and publish the gem (run version:bump first)"
 

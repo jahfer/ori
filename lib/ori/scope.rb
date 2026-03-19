@@ -9,7 +9,6 @@ require "English"
 
 module Ori
   class Scope
-    # Add thread-local state management
     class ThreadLocalState
       attr_reader :fiber_ids,
         :tasks,
@@ -54,16 +53,14 @@ module Ori
       @cancelled = false
       @closed = false
 
-      # Cross-thread wakeup mechanism for unblock and fiber_interrupt
       @wakeup_mutex = ::Mutex.new
       @wakeup_queue = [] #: Array[Fiber]
       @pending_interrupts = {} #: Hash[Fiber, Exception]
       @wakeup_reader, @wakeup_writer = IO.pipe
 
-      # Instead, use thread-local storage
       thread_local_state[object_id] = ThreadLocalState.new
 
-      inherit_or_set_deadline(deadline)
+      inherit_or_register_deadline(deadline)
 
       if @tracer
         @scope_id = Random.uuid_v7(extra_timestamp_bits: 12)
@@ -80,15 +77,14 @@ module Ori
         process_available_work
         Fiber.yield if parent_scope && pending_work?
       end
-    rescue Interrupt => error
-      puts "Scope interrupted! Shutting down..."
-      shutdown!(error)
     ensure
       close_scope
       @parent_scope&.deregister_child_scope(self)
     end
 
-    # Public API
+    # -------------------
+    # --- Public API ---
+    # -------------------
 
     def fork(&block)
       task = create_task(&block)
@@ -137,19 +133,9 @@ module Ori
       raise(cause || exn)
     end
 
-    def tag(name)
-      @tracer&.record_scope(@scope_id, :tag, name)
-    end
-
-    def print_ascii_trace
-      @tracer&.visualize
-    end
-
-    def write_html_trace(directory)
-      @tracer&.write_timeline_data(directory)
-    end
-
-    # Ruby FiberScheduler interface implementation
+    # ----------------------------------------------------
+    # --- Ruby FiberScheduler interface implementation ---
+    # ----------------------------------------------------
 
     def fiber(&block)
       task = fork(&block)
@@ -309,9 +295,6 @@ module Ori
       (total || 0) > 0 ? total : -(e.errno || 0)
     end
 
-    # def io_pread(...) = ()
-    # def io_pwrite(...) = ()
-
     def process_wait(pid, flags)
       return @parent_scope.process_wait(pid, flags) unless fiber_ids.key?(Fiber.current)
 
@@ -344,6 +327,8 @@ module Ori
     end
 
     # TODO: Implement these
+    # def io_pread(...) = ()
+    # def io_pwrite(...) = ()
     # def timeout_after(...) = ()
     # def address_resolve(...) = ()
 
@@ -404,20 +389,9 @@ module Ori
       state.child_scopes?
     end
 
-    # Scope lifecycle
-
-    def inherit_or_set_deadline(duration)
-      parent_deadline = parent_scope&.remaining_deadline
-
-      if parent_deadline && (duration.nil? || parent_deadline < duration)
-        # Inherit parent's deadline
-        @deadline_at = current_time + parent_deadline
-        @deadline_owner = parent_scope.deadline_owner
-      elsif duration
-        @deadline_at = current_time + duration
-        @deadline_owner = self
-      end
-    end
+    # -----------------------
+    # --- Scope lifecycle ---
+    # -----------------------
 
     def process_available_work
       now = current_time
@@ -518,14 +492,6 @@ module Ori
       end
     end
 
-    def interrupt_fiber(fiber, exception)
-      # Remove from wait states before cancelling
-      waiting.delete(fiber)
-      blocked.delete(fiber)
-
-      cancel_fiber!(fiber, exception)
-    end
-
     def close_scope
       @closed = true
       @tracer&.record_scope(@scope_id, :closed)
@@ -534,7 +500,9 @@ module Ori
       @wakeup_writer&.close unless @wakeup_writer&.closed?
     end
 
-    # Timeouts and deadlines
+    # ------------------------------
+    # --- Timeouts and deadlines ---
+    # ------------------------------
 
     def current_time
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -592,7 +560,9 @@ module Ori
       [0, delay].max
     end
 
-    # Fiber management
+    # ------------------------
+    # --- Fiber management ---
+    # ------------------------
 
     def create_task(&block)
       return false if @cancelled
@@ -601,16 +571,6 @@ module Ori
       task = Task.new(&block)
       register_task(task)
       task
-    end
-
-    def register_task(task)
-      fiber_ids[task.fiber] = task.id
-      task_queue[task.fiber] = task
-
-      if @tracer
-        @tracer.register_fiber(task.id, @scope_id)
-        @tracer.record(task.id, :created)
-      end
     end
 
     def resume_fiber(fiber)
@@ -648,6 +608,13 @@ module Ori
       @tracer&.record(id, :completed) unless fiber.alive?
     end
 
+    def interrupt_fiber(fiber, exception)
+      waiting.delete(fiber)
+      blocked.delete(fiber)
+
+      cancel_fiber!(fiber, exception)
+    end
+
     def cancel_fiber!(fiber, error)
       return unless fiber.alive?
 
@@ -663,7 +630,32 @@ module Ori
       @tracer&.record(id, :cancelled, error.message)
     end
 
-    # Registration
+    # --------------------
+    # --- Registration ---
+    # --------------------
+
+    def inherit_or_register_deadline(duration)
+      parent_deadline = parent_scope&.remaining_deadline
+
+      if parent_deadline && (duration.nil? || parent_deadline < duration)
+        # Inherit parent's deadline
+        @deadline_at = current_time + parent_deadline
+        @deadline_owner = parent_scope.deadline_owner
+      elsif duration
+        @deadline_at = current_time + duration
+        @deadline_owner = self
+      end
+    end
+
+    def register_task(task)
+      fiber_ids[task.fiber] = task.id
+      task_queue[task.fiber] = task
+
+      if @tracer
+        @tracer.register_fiber(task.id, @scope_id)
+        @tracer.record(task.id, :created)
+      end
+    end
 
     def register_timeout(fiber, deadline)
       return unless deadline
@@ -690,7 +682,9 @@ module Ori
       added
     end
 
-    # Cleanup
+    # ---------------
+    # --- Cleanup ---
+    # ---------------
 
     def cleanup_dead_fibers
       dead_fibers = fiber_ids.reject { |fiber, _| fiber.alive? }.to_set
@@ -740,13 +734,14 @@ module Ori
       state&.waiting&.delete(fiber)
     end
 
-    # Add helper method to access thread-local state
+    # -------------
+    # --- State ---
+    # -------------
+
     def state
       thread_local_state&.[](object_id) or
         raise "Scope accessed from wrong thread"
     end
-
-    # Update all instance variable references to use state
 
     #: () -> LazyHash
     def task_queue = state.tasks
@@ -768,5 +763,21 @@ module Ori
 
     #: () -> Set[Scope]
     def child_scopes = state.child_scopes
+
+    # -----------------
+    # --- Debugging ---
+    # -----------------
+
+    def tag(name)
+      @tracer&.record_scope(@scope_id, :tag, name)
+    end
+
+    def print_ascii_trace
+      @tracer&.visualize
+    end
+
+    def write_html_trace(directory)
+      @tracer&.write_timeline_data(directory)
+    end
   end
 end

@@ -390,6 +390,21 @@ module Ori
       child_scopes.delete(scope)
     end
 
+    def nearest_timeout_at
+      candidates = [] #: Array[Numeric]
+      candidates.concat(waiting.values.compact) unless waiting.empty?
+      candidates << @deadline_at if @deadline_at
+
+      if child_scopes?
+        child_scopes.each do |scope|
+          child_nearest = scope.nearest_timeout_at
+          candidates << child_nearest if child_nearest
+        end
+      end
+
+      candidates.min
+    end
+
     private
 
     attr_reader :parent_scope
@@ -565,14 +580,10 @@ module Ori
     end
 
     def next_timeout(now = nil)
-      timeouts = [] #: Array[Numeric]
-      timeouts.concat(waiting.values.compact) unless waiting.empty?
-      timeouts << @deadline_at if @deadline_at
-
-      return 0 if timeouts.empty?
+      nearest = nearest_timeout_at
+      return 0 unless nearest
 
       now ||= current_time
-      nearest = timeouts.min #: as !nil
       delay = nearest - now
 
       # Return 0 if the timeout is in the past, otherwise return the delay

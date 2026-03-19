@@ -101,5 +101,29 @@ module Ori
 
       assert_equal(:task_b, result)
     end
+
+    def test_concurrent_sleep_and_pending_io
+      Ori.sync(cancel_after: 5) do |scope|
+        r, w = IO.pipe
+
+        scope.fork do
+          r.readpartial(1)
+        rescue EOFError
+          nil
+        end
+
+        scope.fork { sleep(3) }
+
+        scope.fork do
+          start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          Ori::Select.await([ch = Ori::Channel.new(1), timeout = Ori::Timeout.new(0.2)])
+          elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start
+
+          assert(elapsed < 0.5, "Expected to wait less than 0.5 seconds, but waited #{elapsed} seconds")
+
+          w.close
+        end
+      end
+    end
   end
 end

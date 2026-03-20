@@ -8,32 +8,6 @@ require "English"
 
 module Ori
   class Scope
-    class ThreadLocalState
-      attr_reader :tasks,
-        :pending,
-        :readable,
-        :writable,
-        :waiting,
-        :blocked
-
-      def initialize
-        @tasks = {} # fiber → Task (serves as both fiber registry and task lookup)
-        @pending = []
-        @readable = Hash.new { |hash, key| hash[key] = Set.new }
-        @writable = Hash.new { |hash, key| hash[key] = Set.new }
-        @waiting = {}
-        @blocked = {}
-      end
-
-      def child_scopes
-        @child_scopes ||= Set.new
-      end
-
-      def child_scopes?
-        defined?(@child_scopes) && !@child_scopes.empty?
-      end
-    end
-
     attr_reader :tracer
 
 
@@ -874,10 +848,6 @@ module Ori
     # -------------
     # --- State ---
     # -------------
-
-    def state
-      @state
-    end
 
     #: () -> Hash
     def task_queue = @task_queue

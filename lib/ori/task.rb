@@ -6,7 +6,7 @@ module Ori
 
     EMPTY = :empty
 
-    attr_reader :fiber
+    attr_reader :fiber, :id
 
     def initialize(&block)
       @fiber = Fiber.new(&block)
@@ -34,10 +34,6 @@ module Ori
     def kill
       @fiber.kill
       @value = EMPTY
-    end
-
-    def id
-      @id
     end
 
     def resume

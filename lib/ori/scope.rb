@@ -90,7 +90,7 @@ module Ori
 
     def fork(&block)
       task = create_task(&block)
-      resume_task_or_fiber(task) if task
+      resume_task(task) if task
       task
     end
 
@@ -461,7 +461,11 @@ module Ori
         next if waiting.key?(fiber)
 
         task = task_queue[fiber]
-        resume_task_or_fiber(task || fiber)
+        if task
+          resume_task(task)
+        else
+          resume_task_or_fiber(fiber)
+        end
       end
     end
 
@@ -484,7 +488,11 @@ module Ori
       fibers_to_resume.each do |fiber|
         blocked.delete(fiber)
         task = task_queue[fiber]
-        resume_task_or_fiber(task || fiber)
+        if task
+          resume_task(task)
+        else
+          resume_task_or_fiber(fiber)
+        end
       end
     end
 
@@ -625,6 +633,48 @@ module Ori
 
     def resume_fiber(fiber)
       resume_task_or_fiber(task_queue.fetch(fiber, fiber))
+    end
+
+    def resume_task(task)
+      return unless task.alive?
+
+      fiber = task.fiber
+
+      begin
+        return if @cancelled
+
+        result = task.resume
+        case result
+        when CancellationError
+          if @tracer
+            id = fiber_ids[fiber]
+            @tracer.record(id, :cancelled, result.message)
+          end
+          task.kill
+          @needs_cleanup = true
+        when Task
+          pending << fiber
+        when Ori::Selectable
+          if @tracer
+            id = fiber_ids[fiber]
+            @tracer.record(id, :resource_wait, result.class.name)
+          end
+          blocked[fiber] = result
+        else
+          if fiber.alive?
+            pending << fiber
+          else
+            @needs_cleanup = true
+          end
+        end
+      rescue => error
+        if @tracer
+          id = fiber_ids[fiber]
+          @tracer.record(id, :error, error.message)
+        end
+        shutdown!(error)
+        raise(error)
+      end
     end
 
     def resume_task_or_fiber(task_or_fiber)

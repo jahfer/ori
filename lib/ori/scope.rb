@@ -805,28 +805,23 @@ module Ori
     # ---------------
 
     def cleanup_dead_fibers
-      # Fast path: collect dead fibers without intermediate array
-      dead_fibers = nil
-      fiber_ids.each_key do |fiber|
+      had_dead = false
+      fiber_ids.delete_if do |fiber, _|
         unless fiber.alive?
-          (dead_fibers ||= []) << fiber
+          task_queue.delete(fiber)
+          waiting.delete(fiber)
+          had_dead = true
         end
       end
-      return unless dead_fibers
-
-      dead_fibers.each do |fiber|
-        fiber_ids.delete(fiber)
-        task_queue.delete(fiber)
-        waiting.delete(fiber)
-      end
+      return unless had_dead
 
       unless readable.empty?
-        readable.each { |_, fibers| dead_fibers.each { |f| fibers.delete(f) } }
+        readable.each_value { |fibers| fibers.delete_if { |f| !f.alive? } }
         readable.delete_if { |_, fibers| fibers.empty? }
       end
 
       unless writable.empty?
-        writable.each { |_, fibers| dead_fibers.each { |f| fibers.delete(f) } }
+        writable.each_value { |fibers| fibers.delete_if { |f| !f.alive? } }
         writable.delete_if { |_, fibers| fibers.empty? }
       end
     end

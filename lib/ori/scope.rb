@@ -44,25 +44,27 @@ module Ori
     def initialize(parent_scope, name, deadline = nil, trace = false)
       @name = name
       @parent_scope = parent_scope
-      @parent_scope&.register_child_scope(self)
-
-      @tracer = if trace || parent_scope&.tracing?
-        parent_scope&.tracer || Tracer.new
-      end
-
       @cancelled = false
       @closed = false
-
       @wakeup_mutex = ::Mutex.new
       @wakeup_queue = [] #: Array[Fiber]
       @pending_interrupts = {} #: Hash[Fiber, Exception]
       @wakeup_reader = nil
       @wakeup_writer = nil
-
       @state = ThreadLocalState.new
       @needs_cleanup = false
+      @tracer = nil
 
-      inherit_or_register_deadline(deadline)
+      if parent_scope
+        parent_scope.register_child_scope(self)
+        if trace || parent_scope.tracing?
+          @tracer = parent_scope.tracer || Tracer.new
+        end
+      elsif trace
+        @tracer = Tracer.new
+      end
+
+      inherit_or_register_deadline(deadline) if deadline || parent_scope
 
       if @tracer
         @scope_id = Random.uuid_v7(extra_timestamp_bits: 12)

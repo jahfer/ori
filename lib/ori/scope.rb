@@ -441,8 +441,7 @@ module Ori
     # -----------------------
 
     def process_available_work
-      now = current_time
-      check_deadline!(now)
+      check_deadline!
 
       if @needs_cleanup
         cleanup_dead_fibers
@@ -451,8 +450,8 @@ module Ori
 
       process_pending_fibers
       process_blocked_fibers
-      process_io_operations(now)
-      process_timeouts(now)
+      process_io_operations
+      process_timeouts
     end
 
     def process_pending_fibers

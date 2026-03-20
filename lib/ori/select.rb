@@ -5,8 +5,11 @@ module Ori
     class << self
       #: [U] (Array[U & Selectable] resources) -> U
       def await(resources)
-        # TODO: Check if any resources are already resolved
-        # before spawning fibers
+        # Fast path: check if any resource is already ready
+        resources.each do |resource|
+          return resource if resource.respond_to?(:ready?) && resource.ready?
+        end
+
         winner = Promise.new
 
         Ori.sync(name: "select") do |scope|

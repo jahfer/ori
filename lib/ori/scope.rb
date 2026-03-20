@@ -27,12 +27,12 @@ module Ori
       @tracer = nil
 
       # Cache state collections directly as ivars for zero-indirection access
-      @task_queue = {} # fiber → Task
+      @task_queue = {}.compare_by_identity # fiber → Task
       @pending = []
       @readable = {}
       @writable = {}
-      @waiting = {}
-      @blocked = {}
+      @waiting = {}.compare_by_identity
+      @blocked = {}.compare_by_identity
       @_child_scopes = nil
 
       if parent_scope

@@ -5,7 +5,7 @@ module Ori
   class Channel
     include(Ori::Selectable)
 
-    EMPTY = "empty"
+    EMPTY = :_ori_empty_
 
     #: (Integer size) -> void
     def initialize(size)

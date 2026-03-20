@@ -48,7 +48,7 @@ module Ori
       @closed = false
       @wakeup_mutex = ::Mutex.new
       @wakeup_queue = [] #: Array[Fiber]
-      @pending_interrupts = {} #: Hash[Fiber, Exception]
+      @pending_interrupts = nil #: Hash[Fiber, Exception]?
       @wakeup_reader = nil
       @wakeup_writer = nil
       @state = ThreadLocalState.new
@@ -263,7 +263,7 @@ module Ori
 
     def fiber_interrupt(fiber, exception)
       @wakeup_mutex.synchronize do
-        @pending_interrupts[fiber] = exception
+        (@pending_interrupts ||= {})[fiber] = exception
         @wakeup_queue << fiber
       end
       ensure_wakeup_pipe
@@ -541,7 +541,7 @@ module Ori
     def drain_wakeup_queue
       interrupts = nil #: Hash[Fiber, Exception]?
       fibers = @wakeup_mutex.synchronize do
-        unless @pending_interrupts.empty?
+        if @pending_interrupts && !@pending_interrupts.empty?
           interrupts = @pending_interrupts.dup
           @pending_interrupts.clear
         end

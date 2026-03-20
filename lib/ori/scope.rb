@@ -39,7 +39,6 @@ module Ori
 
     attr_reader :tracer
 
-    HASH_SET_LAMBDA = ->(hash, key) { hash[key] = Set.new }
 
     def initialize(parent_scope, name, deadline = nil, trace = false)
       @name = name

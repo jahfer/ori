@@ -7,7 +7,7 @@ module Ori
       def await(resources)
         # Fast path: check if any resource is already ready
         resources.each do |resource|
-          return resource if resource.respond_to?(:ready?) && resource.ready?
+          return resource if resource.ready?
         end
 
         winner = Promise.new

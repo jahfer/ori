@@ -32,9 +32,9 @@ module Ori
 
     #: () -> E
     def await
-      return @value if resolved?
+      return @value if @resolved
 
-      Fiber.yield(self) until resolved?
+      Fiber.yield(self) until @resolved
       @value
     end
   end

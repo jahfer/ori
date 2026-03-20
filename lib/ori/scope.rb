@@ -419,18 +419,22 @@ module Ori
     end
 
     def nearest_timeout_at
-      candidates = [] #: Array[Numeric]
-      candidates.concat(waiting.values.compact) unless waiting.empty?
-      candidates << @deadline_at if @deadline_at
+      nearest = @deadline_at
+
+      unless waiting.empty?
+        waiting.each_value do |deadline|
+          nearest = deadline if deadline && (nearest.nil? || deadline < nearest)
+        end
+      end
 
       if child_scopes?
         child_scopes.each do |scope|
           child_nearest = scope.nearest_timeout_at
-          candidates << child_nearest if child_nearest
+          nearest = child_nearest if child_nearest && (nearest.nil? || child_nearest < nearest)
         end
       end
 
-      candidates.min
+      nearest
     end
 
     private
@@ -610,7 +614,7 @@ module Ori
     end
 
     def check_stalled_fibers!
-      return false if blocked.none?
+      return false if blocked.empty?
       return false if root_scope.has_active_work?
 
       error = DeadlockError.new(self)

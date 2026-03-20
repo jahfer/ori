@@ -59,7 +59,6 @@ module Ori
       @wakeup_reader, @wakeup_writer = IO.pipe
 
       @state = ThreadLocalState.new
-      thread_local_state[object_id] = @state
 
       inherit_or_register_deadline(deadline)
 
@@ -533,7 +532,6 @@ module Ori
     def close_scope
       @closed = true
       @tracer&.record_scope(@scope_id, :closed)
-      thread_local_state&.delete(object_id)
       @wakeup_reader&.close unless @wakeup_reader&.closed?
       @wakeup_writer&.close unless @wakeup_writer&.closed?
     end

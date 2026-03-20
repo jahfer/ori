@@ -23,6 +23,7 @@ module Ori
       @wakeup_writer = nil
       @needs_cleanup = false
       @has_io = false # Set when IO operations or cross-thread wakeups occur
+      @has_timeouts = false # Set when timeouts are registered
       @tracer = nil
 
       # Cache state collections directly as ivars for zero-indirection access
@@ -448,8 +449,7 @@ module Ori
     def process_pending_fibers
       pending.size.times do
         fiber = pending.shift
-        # TODO???
-        next if waiting.key?(fiber)
+        next if @has_timeouts && waiting.key?(fiber)
 
         task = task_queue[fiber]
         if task
@@ -771,6 +771,7 @@ module Ori
     def register_timeout(fiber, deadline)
       return unless deadline
 
+      @has_timeouts = true
       waiting[fiber] = current_time + deadline
     end
 

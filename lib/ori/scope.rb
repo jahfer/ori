@@ -342,7 +342,7 @@ module Ori
     attr_reader :deadline_owner
 
     #: () -> LazyHash
-    def fiber_ids = state.fiber_ids
+    def fiber_ids = @state.fiber_ids
 
     def remaining_deadline
       return unless @deadline_at
@@ -423,7 +423,7 @@ module Ori
     end
 
     def child_scopes?
-      state.child_scopes?
+      @state.child_scopes?
     end
 
     # -----------------------
@@ -773,25 +773,25 @@ module Ori
     end
 
     #: () -> LazyHash
-    def task_queue = state.tasks
+    def task_queue = @state.tasks
 
     #: () -> LazyArray
-    def pending = state.pending
+    def pending = @state.pending
 
     #: () -> LazyHashSet
-    def readable = state.readable
+    def readable = @state.readable
 
     #: () -> LazyHashSet
-    def writable = state.writable
+    def writable = @state.writable
 
     #: () -> LazyHash
-    def waiting = state.waiting
+    def waiting = @state.waiting
 
     #: () -> LazyHash
-    def blocked = state.blocked
+    def blocked = @state.blocked
 
     #: () -> Set[Scope]
-    def child_scopes = state.child_scopes
+    def child_scopes = @state.child_scopes
 
     # -----------------
     # --- Debugging ---

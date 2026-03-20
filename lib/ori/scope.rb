@@ -81,14 +81,35 @@ module Ori
       raise "Scope is closed" if @closed
 
       task = Task.new(&block)
-      task_queue[task.fiber] = task
+      fiber = task.fiber
+      task_queue[fiber] = task
 
       if @tracer
         @tracer.register_fiber(task.id, @scope_id)
         @tracer.record(task.id, :created)
       end
 
-      resume_task(task)
+      # Inline resume_task hot path — fiber is always alive here
+      return task if @cancelled
+
+      begin
+        fiber_result = fiber.resume
+
+        if fiber.alive?
+          if fiber_result.is_a?(Ori::Selectable)
+            blocked[fiber] = fiber_result
+          else
+            pending << fiber
+          end
+        else
+          task._set_value(fiber_result)
+          @needs_cleanup = true
+        end
+      rescue => error
+        shutdown!(error)
+        raise(error)
+      end
+
       task
     end
 

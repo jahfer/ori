@@ -647,7 +647,12 @@ module Ori
     end
 
     def resume_fiber(fiber)
-      resume_task_or_fiber(task_queue.fetch(fiber, fiber))
+      task = task_queue[fiber]
+      if task
+        resume_task(task)
+      else
+        resume_task_or_fiber(fiber)
+      end
     end
 
     def resume_task(task)

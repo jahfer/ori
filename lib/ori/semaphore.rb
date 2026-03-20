@@ -12,11 +12,21 @@ module Ori
     end
 
     def sync
-      acquire
-      begin
-        yield
-      ensure
-        release
+      if @available > 0
+        # Fast path: ticket available immediately
+        @available -= 1
+        begin
+          yield
+        ensure
+          @available += 1
+        end
+      else
+        acquire
+        begin
+          yield
+        ensure
+          release
+        end
       end
     end
 

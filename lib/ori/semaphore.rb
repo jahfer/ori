@@ -28,7 +28,7 @@ module Ori
     end
 
     def acquire
-      Fiber.yield(self) until available?
+      Fiber.yield(self) until @available > 0
       @available -= 1
       true
     end

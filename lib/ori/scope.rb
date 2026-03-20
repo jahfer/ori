@@ -474,8 +474,10 @@ module Ori
     end
 
     def process_io_operations(now = nil)
-      has_io = readable.any? || writable.any?
-      has_wakeup = @wakeup_mutex.synchronize { @wakeup_queue.any? }
+      has_io = !readable.empty? || !writable.empty?
+
+      # Fast path: skip mutex if no wakeups queued (check without lock)
+      has_wakeup = !@wakeup_queue.empty?
 
       # Process any already-queued wakeups before selecting
       drain_wakeup_queue if has_wakeup

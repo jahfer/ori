@@ -19,13 +19,13 @@ module Ori
         :blocked
 
       def initialize
-        @fiber_ids = LazyHash.new
-        @tasks = LazyHash.new
-        @pending = LazyArray.new
-        @readable = LazyHashSet.new
-        @writable = LazyHashSet.new
-        @waiting = LazyHash.new
-        @blocked = LazyHash.new
+        @fiber_ids = {}
+        @tasks = {}
+        @pending = []
+        @readable = Hash.new { |hash, key| hash[key] = Set.new }
+        @writable = Hash.new { |hash, key| hash[key] = Set.new }
+        @waiting = {}
+        @blocked = {}
       end
 
       def child_scopes

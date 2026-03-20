@@ -58,7 +58,8 @@ module Ori
       @pending_interrupts = {} #: Hash[Fiber, Exception]
       @wakeup_reader, @wakeup_writer = IO.pipe
 
-      thread_local_state[object_id] = ThreadLocalState.new
+      @state = ThreadLocalState.new
+      thread_local_state[object_id] = @state
 
       inherit_or_register_deadline(deadline)
 
@@ -749,19 +750,18 @@ module Ori
     end
 
     def cleanup_io_wait(fiber, io, added)
-      state = thread_local_state&.[](object_id)
-      return unless state
+      s = @state
+      return unless s
 
-      state.readable[io]&.delete(fiber) if added[:readable]
-      state.writable[io]&.delete(fiber) if added[:writable]
+      s.readable[io]&.delete(fiber) if added[:readable]
+      s.writable[io]&.delete(fiber) if added[:writable]
 
-      state.readable.delete(io) if state.readable[io]&.empty?
-      state.writable.delete(io) if state.writable[io]&.empty?
+      s.readable.delete(io) if s.readable[io]&.empty?
+      s.writable.delete(io) if s.writable[io]&.empty?
     end
 
     def cleanup_timeout(fiber)
-      state = thread_local_state&.[](object_id)
-      state&.waiting&.delete(fiber)
+      @state&.waiting&.delete(fiber)
     end
 
     # -------------
@@ -769,8 +769,7 @@ module Ori
     # -------------
 
     def state
-      thread_local_state&.[](object_id) or
-        raise "Scope accessed from wrong thread"
+      @state
     end
 
     #: () -> LazyHash

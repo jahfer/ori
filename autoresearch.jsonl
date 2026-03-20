@@ -1,1 +1,2 @@
 {"type":"config","name":"Ori Scope performance optimization","metricName":"ops_per_sec","metricUnit":"","bestDirection":"higher"}
+{"run":1,"commit":"80b7cc0","metric":12317,"metrics":{"total_ms":129.9,"fork_join_ms":21.4,"channel_ms":18.4,"promise_ms":28,"semaphore_ms":15.8,"broadcast_ms":9.1,"select_ms":5.5,"nested_scopes_ms":17.1,"mixed_ms":11.5},"status":"keep","description":"Baseline: 12,317 ops/sec","timestamp":1774007413147,"segment":0,"confidence":null}

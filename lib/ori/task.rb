@@ -11,7 +11,6 @@ module Ori
     def initialize(&block)
       @fiber = Fiber.new(&block)
       @value = EMPTY
-      @cancellation_error = nil
       @id = @fiber.object_id
     end
 

@@ -612,7 +612,6 @@ module Ori
       return unless task_or_fiber.alive?
 
       fiber = task_or_fiber.is_a?(Task) ? task_or_fiber.fiber : task_or_fiber
-      id = fiber_ids[fiber]
 
       begin
         return if @cancelled # Early return if cancelled
@@ -620,23 +619,35 @@ module Ori
         result = task_or_fiber.resume
         case result
         when CancellationError
-          @tracer&.record(id, :cancelled, result.message)
+          if @tracer
+            id = fiber_ids[fiber]
+            @tracer.record(id, :cancelled, result.message)
+          end
           task_or_fiber.kill
-        when Ori::Channel, Ori::Promise, Ori::Semaphore, Ori::ReentrantSemaphore, Ori::Broadcast::Subscription
-          @tracer&.record(id, :resource_wait, result.class.name)
-          blocked[fiber] = result
         when Task
           pending << fiber
+        when Ori::Selectable
+          if @tracer
+            id = fiber_ids[fiber]
+            @tracer.record(id, :resource_wait, result.class.name)
+          end
+          blocked[fiber] = result
         else
           pending << fiber if fiber.alive?
         end
       rescue => error
-        @tracer&.record(id, :error, error.message)
+        if @tracer
+          id = fiber_ids[fiber]
+          @tracer.record(id, :error, error.message)
+        end
         shutdown!(error)
         raise(error)
       end
 
-      @tracer&.record(id, :completed) unless fiber.alive?
+      if @tracer && !fiber.alive?
+        id = fiber_ids[fiber]
+        @tracer.record(id, :completed)
+      end
     end
 
     def interrupt_fiber(fiber, exception)

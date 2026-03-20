@@ -460,7 +460,8 @@ module Ori
         # TODO???
         next if waiting.key?(fiber)
 
-        resume_fiber(fiber)
+        task = task_queue[fiber]
+        resume_task_or_fiber(task || fiber)
       end
     end
 
@@ -482,7 +483,8 @@ module Ori
 
       fibers_to_resume.each do |fiber|
         blocked.delete(fiber)
-        resume_fiber(fiber)
+        task = task_queue[fiber]
+        resume_task_or_fiber(task || fiber)
       end
     end
 

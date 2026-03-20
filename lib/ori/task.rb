@@ -10,7 +10,6 @@ module Ori
 
     def initialize(&block)
       @fiber = Fiber.new(&block)
-      @killed = false
       @value = EMPTY
       @cancellation_error = nil
       @id = @fiber.object_id
@@ -29,12 +28,11 @@ module Ori
     end
 
     def killed?
-      @killed
+      !@fiber.alive? && @value == EMPTY
     end
 
     def kill
       @fiber.kill
-      @killed = true
       @value = EMPTY
     end
 

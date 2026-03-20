@@ -23,6 +23,8 @@ module Ori
       @resolved
     end
 
+    alias_method :ready?, :resolved?
+
     def deconstruct
       await unless resolved?
       [@value]

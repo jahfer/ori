@@ -58,6 +58,8 @@ module Ori
       end
     end
 
+    alias_method :ready?, :value?
+
     #: () -> Channel[E]
     def await
       peek

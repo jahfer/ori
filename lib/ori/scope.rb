@@ -454,21 +454,18 @@ module Ori
     end
 
     def process_blocked_fibers
-      fibers_to_resume = []
+      fibers_to_resume = nil
 
-      # TODO: shuffle blocked before processing?
       blocked.each do |fiber, resource|
-        case resource
-        when Ori::Channel, Ori::Broadcast::Subscription
-          fibers_to_resume << fiber if resource.value?
-        when Ori::Promise
-          fibers_to_resume << fiber if resource.resolved?
-        when Ori::Semaphore, Ori::ReentrantSemaphore
-          fibers_to_resume << fiber if resource.available?
+        if resource.ready?
+          (fibers_to_resume ||= []) << fiber
         end
       end
 
-      check_stalled_fibers! if fibers_to_resume.empty?
+      unless fibers_to_resume
+        check_stalled_fibers!
+        return
+      end
 
       fibers_to_resume.each do |fiber|
         blocked.delete(fiber)

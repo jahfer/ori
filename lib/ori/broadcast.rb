@@ -52,6 +52,8 @@ module Ori
         !@queue.empty?
       end
 
+      alias_method :ready?, :value?
+
       #: () -> Subscription[E]
       def await
         peek

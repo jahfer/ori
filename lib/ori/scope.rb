@@ -77,9 +77,15 @@ module Ori
     # Users are not expected to call this method directly
     # This is the event loop for an Ori::Scope instance
     def await
-      while pending_work?
-        process_available_work
-        Fiber.yield if parent_scope && pending_work?
+      if parent_scope
+        while pending_work?
+          process_available_work
+          Fiber.yield if pending_work?
+        end
+      else
+        while pending_work?
+          process_available_work
+        end
       end
     ensure
       close_scope

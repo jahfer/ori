@@ -562,8 +562,10 @@ module Ori
     def close_scope
       @closed = true
       @tracer&.record_scope(@scope_id, :closed)
-      @wakeup_reader&.close unless @wakeup_reader&.closed?
-      @wakeup_writer&.close unless @wakeup_writer&.closed?
+      if @wakeup_reader
+        @wakeup_reader.close unless @wakeup_reader.closed?
+        @wakeup_writer.close unless @wakeup_writer.closed?
+      end
     end
 
     # ------------------------------

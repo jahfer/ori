@@ -54,7 +54,7 @@ module Ori
       if @size.zero?
         @value != EMPTY
       else
-        @queue.peek != UnboundedQueue::EMPTY
+        !@queue.empty?
       end
     end
 
@@ -128,6 +128,10 @@ module Ori
 
     def size
       @buffer.size
+    end
+
+    def empty?
+      @buffer.empty?
     end
 
     def push(item)

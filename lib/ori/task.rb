@@ -37,11 +37,6 @@ module Ori
     end
 
     def resume
-      if @cancellation_error
-        @fiber.kill
-        return @cancellation_error
-      end
-
       fiber_result = @fiber.resume
 
       # Check for resource yielded by fiber (Channel, Promise, Semaphore, etc.)
@@ -67,8 +62,8 @@ module Ori
     end
 
     def cancel(error)
-      @cancellation_error = error
-      resume
+      @fiber.kill
+      error
     end
   end
 end

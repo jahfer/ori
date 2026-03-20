@@ -97,8 +97,19 @@ module Ori
     # -------------------
 
     def fork(&block)
-      task = create_task(&block)
-      resume_task(task) if task
+      return false if @cancelled
+      raise "Scope is closed" if @closed
+
+      task = Task.new(&block)
+      fiber_ids[task.fiber] = task.id
+      task_queue[task.fiber] = task
+
+      if @tracer
+        @tracer.register_fiber(task.id, @scope_id)
+        @tracer.record(task.id, :created)
+      end
+
+      resume_task(task)
       task
     end
 

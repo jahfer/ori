@@ -29,8 +29,8 @@ module Ori
       # Cache state collections directly as ivars for zero-indirection access
       @task_queue = {} # fiber → Task
       @pending = []
-      @readable = Hash.new { |hash, key| hash[key] = Set.new }
-      @writable = Hash.new { |hash, key| hash[key] = Set.new }
+      @readable = {}
+      @writable = {}
       @waiting = {}
       @blocked = {}
       @_child_scopes = nil
@@ -322,7 +322,7 @@ module Ori
       end
 
       # Register directly on the event loop's readable set
-      readable[reader].add(fiber)
+      (readable[reader] ||= Set.new).add(fiber)
       Fiber.yield
 
       thread.value
@@ -777,12 +777,12 @@ module Ori
       added = 0
 
       if (events & IO::READABLE).nonzero?
-        readable[io].add(fiber)
+        (readable[io] ||= Set.new).add(fiber)
         added |= IO_ADDED_READABLE
       end
 
       if (events & IO::WRITABLE).nonzero?
-        writable[io].add(fiber)
+        (writable[io] ||= Set.new).add(fiber)
         added |= IO_ADDED_WRITABLE
       end
 

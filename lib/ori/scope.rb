@@ -354,12 +354,13 @@ module Ori
     def pending_work?
       return false if closed?
 
-      return true if @wakeup_mutex.synchronize { @wakeup_queue.any? }
-      return true if pending.any?(&:alive?)
-      return true if waiting.any? { |fiber, _| fiber.alive? }
-      return true if blocked.any? { |fiber, _| fiber.alive? }
-      return true if readable.any? { |_, fibers| fibers.any?(&:alive?) }
-      return true if writable.any? { |_, fibers| fibers.any?(&:alive?) }
+      # Fast non-empty checks before expensive alive? iteration
+      return true unless @wakeup_queue.empty?
+      return true unless pending.empty?
+      return true unless waiting.empty?
+      return true unless blocked.empty?
+      return true unless readable.empty?
+      return true unless writable.empty?
       return true if child_scopes? && child_scopes.any? { |scope| scope.pending_work? } # rubocop:disable Style/SymbolProc (protected method called)
 
       false
@@ -373,11 +374,11 @@ module Ori
     def has_active_work?
       return false if closed?
 
-      return true if @wakeup_mutex.synchronize { @wakeup_queue.any? }
-      return true if pending.any?(&:alive?)
-      return true if waiting.any? { |fiber, _| fiber.alive? }
-      return true if readable.any? { |_, fibers| fibers.any?(&:alive?) }
-      return true if writable.any? { |_, fibers| fibers.any?(&:alive?) }
+      return true unless @wakeup_queue.empty?
+      return true unless pending.empty?
+      return true unless waiting.empty?
+      return true unless readable.empty?
+      return true unless writable.empty?
       return true if child_scopes? && child_scopes.any? { |scope| scope.has_active_work? }
 
       false
@@ -718,20 +719,29 @@ module Ori
     # ---------------
 
     def cleanup_dead_fibers
-      dead_fibers = fiber_ids.reject { |fiber, _| fiber.alive? }.to_set
-      return if dead_fibers.empty?
-
-      readable.each { |_, fibers| fibers.subtract(dead_fibers) }
-      readable.delete_if { |_, fibers| fibers.empty? }
-
-      writable.each { |_, fibers| fibers.subtract(dead_fibers) }
-      writable.delete_if { |_, fibers| fibers.empty? }
-
-      waiting.delete_if { |fiber, _| dead_fibers.include?(fiber) }
+      # Fast path: collect dead fibers without intermediate array
+      dead_fibers = nil
+      fiber_ids.each_key do |fiber|
+        unless fiber.alive?
+          (dead_fibers ||= []) << fiber
+        end
+      end
+      return unless dead_fibers
 
       dead_fibers.each do |fiber|
         fiber_ids.delete(fiber)
         task_queue.delete(fiber)
+        waiting.delete(fiber)
+      end
+
+      unless readable.empty?
+        readable.each { |_, fibers| dead_fibers.each { |f| fibers.delete(f) } }
+        readable.delete_if { |_, fibers| fibers.empty? }
+      end
+
+      unless writable.empty?
+        writable.each { |_, fibers| dead_fibers.each { |f| fibers.delete(f) } }
+        writable.delete_if { |_, fibers| fibers.empty? }
       end
     end
 

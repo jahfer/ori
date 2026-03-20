@@ -114,12 +114,12 @@ module Ori
     end
 
     def take_buffered
-      Fiber.yield(self) until value?
+      Fiber.yield(self) until !@queue.empty?
       @queue.shift
     end
 
     def peek_buffered
-      Fiber.yield(self) until value?
+      Fiber.yield(self) until !@queue.empty?
       @queue.first
     end
   end

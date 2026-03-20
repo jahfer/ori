@@ -654,29 +654,24 @@ module Ori
       begin
         return if @cancelled
 
-        result = task.resume
-        case result
-        when CancellationError
-          if @tracer
-            id = task_queue[fiber]&.id
-            @tracer.record(id, :cancelled, result.message)
-          end
-          task.kill
-          @needs_cleanup = true
-        when Task
-          pending << fiber
-        when Ori::Selectable
-          if @tracer
-            id = task_queue[fiber]&.id
-            @tracer.record(id, :resource_wait, result.class.name)
-          end
-          blocked[fiber] = result
-        else
-          if fiber.alive?
-            pending << fiber
+        # Inline task.resume to avoid double dispatch
+        fiber_result = fiber.resume
+
+        if fiber.alive?
+          if fiber_result.is_a?(Ori::Selectable)
+            # Resource yielded (Channel, Promise, Semaphore, etc.)
+            if @tracer
+              id = task_queue[fiber]&.id
+              @tracer.record(id, :resource_wait, fiber_result.class.name)
+            end
+            blocked[fiber] = fiber_result
           else
-            @needs_cleanup = true
+            pending << fiber
           end
+        else
+          # Fiber completed — store value in task
+          task._set_value(fiber_result)
+          @needs_cleanup = true
         end
       rescue => error
         if @tracer

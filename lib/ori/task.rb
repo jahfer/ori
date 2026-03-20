@@ -35,6 +35,11 @@ module Ori
       @value = EMPTY
     end
 
+    # @api private — used by Scope to set value directly
+    def _set_value(v)
+      @value = v
+    end
+
     def resume
       fiber_result = @fiber.resume
 

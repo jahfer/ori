@@ -5,7 +5,7 @@ module Ori
   class Channel
     include(Ori::Selectable)
 
-    EMPTY = "empty"
+    EMPTY = :_ori_empty_
 
     #: (Integer size) -> void
     def initialize(size)
@@ -17,7 +17,7 @@ module Ori
         @value = EMPTY
       else
         # Buffered channel state
-        @queue = UnboundedQueue.new
+        @queue = []
       end
     end
 
@@ -25,6 +25,9 @@ module Ori
     def put(item)
       if @size.zero?
         put_zero_sized(item)
+      elsif @queue.size < @size
+        # Fast path: buffer has space
+        @queue << item
       else
         put_buffered(item)
       end
@@ -35,6 +38,9 @@ module Ori
     def take
       if @size.zero?
         take_zero_sized
+      elsif !@queue.empty?
+        # Fast path: data available
+        @queue.shift
       else
         take_buffered
       end
@@ -54,9 +60,11 @@ module Ori
       if @size.zero?
         @value != EMPTY
       else
-        @queue.peek != UnboundedQueue::EMPTY
+        !@queue.empty?
       end
     end
+
+    alias_method :ready?, :value?
 
     #: () -> Channel[E]
     def await
@@ -102,47 +110,17 @@ module Ori
     # Buffered channel implementation
     def put_buffered(item)
       Fiber.yield until @queue.size < @size
-      @queue.push(item)
+      @queue << item
     end
 
     def take_buffered
-      Fiber.yield(self) until value?
+      Fiber.yield(self) until !@queue.empty?
       @queue.shift
     end
 
     def peek_buffered
-      Fiber.yield(self) until value?
-      @queue.peek
+      Fiber.yield(self) until !@queue.empty?
+      @queue.first
     end
   end
-
-  # TODO: implement sliding queue, dropping queue
-  class UnboundedQueue
-    EMPTY = "empty"
-
-    def initialize
-      @buffer = []
-    end
-
-    def size
-      @buffer.size
-    end
-
-    def push(item)
-      @buffer << item
-    end
-
-    def peek
-      if @buffer.empty?
-        EMPTY
-      else
-        @buffer.first
-      end
-    end
-
-    def shift
-      @buffer.shift
-    end
-  end
-  private_constant(:UnboundedQueue)
 end

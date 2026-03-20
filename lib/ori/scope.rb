@@ -4,67 +4,51 @@
 require "nio"
 require "io/nonblock"
 require "random/formatter"
-require "ori/lazy"
 require "English"
 
 module Ori
   class Scope
-    class ThreadLocalState
-      attr_reader :fiber_ids,
-        :tasks,
-        :pending,
-        :readable,
-        :writable,
-        :waiting,
-        :blocked
-
-      def initialize
-        @fiber_ids = LazyHash.new
-        @tasks = LazyHash.new
-        @pending = LazyArray.new
-        @readable = LazyHashSet.new
-        @writable = LazyHashSet.new
-        @waiting = LazyHash.new
-        @blocked = LazyHash.new
-      end
-
-      def child_scopes
-        @child_scopes ||= Set.new
-      end
-
-      def child_scopes?
-        defined?(@child_scopes) && !@child_scopes.empty?
-      end
-    end
-
     attr_reader :tracer
 
-    HASH_SET_LAMBDA = ->(hash, key) { hash[key] = Set.new }
 
     def initialize(parent_scope, name, deadline = nil, trace = false)
       @name = name
       @parent_scope = parent_scope
-      @parent_scope&.register_child_scope(self)
-
-      @tracer = if trace || parent_scope&.tracing?
-        parent_scope&.tracer || Tracer.new
-      end
-
       @cancelled = false
       @closed = false
-
-      @wakeup_mutex = ::Mutex.new
+      @wakeup_mutex = nil
       @wakeup_queue = [] #: Array[Fiber]
-      @pending_interrupts = {} #: Hash[Fiber, Exception]
-      @wakeup_reader, @wakeup_writer = IO.pipe
+      @pending_interrupts = nil #: Hash[Fiber, Exception]?
+      @wakeup_reader = nil
+      @wakeup_writer = nil
+      @needs_cleanup = false
+      @has_io = false # Set when IO operations or cross-thread wakeups occur
+      @has_timeouts = false # Set when timeouts are registered
+      @tracer = nil
 
-      thread_local_state[object_id] = ThreadLocalState.new
+      # Cache state collections directly as ivars for zero-indirection access
+      @task_queue = {}.compare_by_identity # fiber → Task
+      @pending = []
+      @readable = {}
+      @writable = {}
+      @waiting = {}.compare_by_identity
+      @blocked = {}.compare_by_identity
+      @_child_scopes = nil
 
-      inherit_or_register_deadline(deadline)
+      if parent_scope
+        parent_scope.register_child_scope(self)
+        if trace || parent_scope.tracing?
+          @tracer = parent_scope.tracer || Tracer.new
+        end
+      elsif trace
+        @tracer = Tracer.new
+      end
+
+      inherit_or_register_deadline(deadline) if deadline || parent_scope
 
       if @tracer
         @scope_id = Random.uuid_v7(extra_timestamp_bits: 12)
-        creating_fiber_id = parent_scope.fiber_ids[Fiber.current] if parent_scope
+        creating_fiber_id = parent_scope.fiber_ids[Fiber.current]&.id if parent_scope
         @tracer.register_scope(@scope_id, parent_scope&.scope_id, creating_fiber_id, name: @name)
         @tracer.record_scope(@scope_id, :opened)
       end
@@ -73,9 +57,15 @@ module Ori
     # Users are not expected to call this method directly
     # This is the event loop for an Ori::Scope instance
     def await
-      while pending_work?
-        process_available_work
-        Fiber.yield if parent_scope && pending_work?
+      if parent_scope
+        while pending_work?
+          process_available_work
+          Fiber.yield if pending_work?
+        end
+      else
+        while pending_work?
+          process_available_work
+        end
       end
     ensure
       close_scope
@@ -87,8 +77,39 @@ module Ori
     # -------------------
 
     def fork(&block)
-      task = create_task(&block)
-      resume_task_or_fiber(task) if task
+      return false if @cancelled
+      raise "Scope is closed" if @closed
+
+      task = Task.new(&block)
+      fiber = task.fiber
+      task_queue[fiber] = task
+
+      if @tracer
+        @tracer.register_fiber(task.id, @scope_id)
+        @tracer.record(task.id, :created)
+      end
+
+      # Inline resume_task hot path — fiber is always alive here
+      return task if @cancelled
+
+      begin
+        fiber_result = fiber.resume
+
+        if fiber.alive?
+          if fiber_result.is_a?(Ori::Selectable)
+            blocked[fiber] = fiber_result
+          else
+            pending << fiber
+          end
+        else
+          task._set_value(fiber_result)
+          @needs_cleanup = true
+        end
+      rescue => error
+        shutdown!(error)
+        raise(error)
+      end
+
       task
     end
 
@@ -143,10 +164,10 @@ module Ori
     end
 
     def io_wait(io, events, timeout = nil)
-      return @parent_scope.io_wait(io, events, timeout) unless fiber_ids.key?(Fiber.current)
+      return @parent_scope.io_wait(io, events, timeout) unless task_queue.key?(Fiber.current)
 
       fiber = Fiber.current
-      id = fiber_ids[fiber]
+      id = task_queue[fiber]&.id
       @tracer&.record(id, :waiting_io, "#{io.inspect}:#{events}")
 
       added = register_io_wait(fiber, io, events)
@@ -154,22 +175,22 @@ module Ori
 
       Fiber.yield
 
-      if added[:readable] && added[:writable]
+      if (added & IO_ADDED_READABLE).nonzero? && (added & IO_ADDED_WRITABLE).nonzero?
         IO::READABLE | IO::WRITABLE
-      elsif added[:readable]
+      elsif (added & IO_ADDED_READABLE).nonzero?
         IO::READABLE
-      elsif added[:writable]
+      elsif (added & IO_ADDED_WRITABLE).nonzero?
         IO::WRITABLE
       else
         0
       end
     ensure
-      cleanup_io_wait(fiber, io, added) if added
+      cleanup_io_wait(fiber, io, added) if added != 0
       cleanup_timeout(fiber) if timeout && fiber
     end
 
     def io_select(readables, writables, exceptables, timeout)
-      unless fiber_ids.key?(Fiber.current)
+      unless task_queue.key?(Fiber.current)
         return @parent_scope.io_select(readables, writables, exceptables, timeout)
       end
 
@@ -203,10 +224,10 @@ module Ori
     end
 
     def kernel_sleep(duration)
-      return @parent_scope.kernel_sleep(duration) unless fiber_ids.key?(Fiber.current)
+      return @parent_scope.kernel_sleep(duration) unless task_queue.key?(Fiber.current)
 
       fiber = Fiber.current
-      id = fiber_ids[fiber]
+      id = task_queue[fiber]&.id
       @tracer&.record(id, :sleeping, duration)
 
       if duration > 0
@@ -218,7 +239,7 @@ module Ori
     end
 
     def block(...)
-      unless fiber_ids.key?(Fiber.current)
+      unless task_queue.key?(Fiber.current)
         return @parent_scope.block(...) if @parent_scope
       end
 
@@ -229,26 +250,30 @@ module Ori
     end
 
     def unblock(blocker, fiber)
-      unless fiber_ids.key?(fiber)
+      unless task_queue.key?(fiber)
         return @parent_scope.unblock(blocker, fiber) if @parent_scope
       end
 
       # Thread-safe: enqueue the fiber and signal the event loop
       # via the wakeup pipe. unblock may be called from any thread.
-      @wakeup_mutex.synchronize { @wakeup_queue << fiber }
+      (@wakeup_mutex ||= ::Mutex.new).synchronize { @wakeup_queue << fiber }
+      @has_io = true
+      ensure_wakeup_pipe
       @wakeup_writer.write_nonblock(".") rescue nil # rubocop:disable Style/RescueModifier
     end
 
     def fiber_interrupt(fiber, exception)
-      @wakeup_mutex.synchronize do
-        @pending_interrupts[fiber] = exception
+      (@wakeup_mutex ||= ::Mutex.new).synchronize do
+        (@pending_interrupts ||= {})[fiber] = exception
         @wakeup_queue << fiber
       end
+      @has_io = true
+      ensure_wakeup_pipe
       @wakeup_writer.write_nonblock(".") rescue nil # rubocop:disable Style/RescueModifier
     end
 
     def io_read(io, buffer, length, offset)
-      return @parent_scope.io_read(io, buffer, length, offset) unless fiber_ids.key?(Fiber.current)
+      return @parent_scope.io_read(io, buffer, length, offset) unless task_queue.key?(Fiber.current)
 
       io.nonblock = true unless io.closed?
       total = 0 #: Integer
@@ -277,7 +302,7 @@ module Ori
     end
 
     def io_write(io, buffer, length, offset)
-      return @parent_scope.io_write(io, buffer, length, offset) unless fiber_ids.key?(Fiber.current)
+      return @parent_scope.io_write(io, buffer, length, offset) unless task_queue.key?(Fiber.current)
 
       io.nonblock = true unless io.closed?
       total = 0 #: Integer
@@ -299,10 +324,10 @@ module Ori
     end
 
     def process_wait(pid, flags)
-      return @parent_scope.process_wait(pid, flags) unless fiber_ids.key?(Fiber.current)
+      return @parent_scope.process_wait(pid, flags) unless task_queue.key?(Fiber.current)
 
       fiber = Fiber.current
-      id = fiber_ids[fiber]
+      id = task_queue[fiber]&.id
       @tracer&.record(id, :waiting_process, "pid=#{pid}")
 
       # Bridge thread-based process waiting into the IO event loop.
@@ -318,7 +343,7 @@ module Ori
       end
 
       # Register directly on the event loop's readable set
-      readable[reader].add(fiber)
+      (readable[reader] ||= Set.new).add(fiber)
       Fiber.yield
 
       thread.value
@@ -340,8 +365,8 @@ module Ori
     attr_reader :scope_id
     attr_reader :deadline_owner
 
-    #: () -> LazyHash
-    def fiber_ids = state.fiber_ids
+    #: () -> Hash
+    def fiber_ids = @task_queue
 
     def remaining_deadline
       return unless @deadline_at
@@ -351,14 +376,15 @@ module Ori
     end
 
     def pending_work?
-      return false if closed?
+      return false if @closed
 
-      return true if @wakeup_mutex.synchronize { @wakeup_queue.any? }
-      return true if pending.any?(&:alive?)
-      return true if waiting.any? { |fiber, _| fiber.alive? }
-      return true if blocked.any? { |fiber, _| fiber.alive? }
-      return true if readable.any? { |_, fibers| fibers.any?(&:alive?) }
-      return true if writable.any? { |_, fibers| fibers.any?(&:alive?) }
+      # Fast non-empty checks before expensive alive? iteration
+      return true unless @wakeup_queue.empty?
+      return true unless pending.empty?
+      return true unless waiting.empty?
+      return true unless blocked.empty?
+      return true unless readable.empty?
+      return true unless writable.empty?
       return true if child_scopes? && child_scopes.any? { |scope| scope.pending_work? } # rubocop:disable Style/SymbolProc (protected method called)
 
       false
@@ -370,13 +396,13 @@ module Ori
 
     # Purposefully excludes blocked fibers from checks
     def has_active_work?
-      return false if closed?
+      return false if @closed
 
-      return true if @wakeup_mutex.synchronize { @wakeup_queue.any? }
-      return true if pending.any?(&:alive?)
-      return true if waiting.any? { |fiber, _| fiber.alive? }
-      return true if readable.any? { |_, fibers| fibers.any?(&:alive?) }
-      return true if writable.any? { |_, fibers| fibers.any?(&:alive?) }
+      return true unless @wakeup_queue.empty?
+      return true unless pending.empty?
+      return true unless waiting.empty?
+      return true unless readable.empty?
+      return true unless writable.empty?
       return true if child_scopes? && child_scopes.any? { |scope| scope.has_active_work? }
 
       false
@@ -391,38 +417,36 @@ module Ori
     end
 
     def nearest_timeout_at
-      candidates = [] #: Array[Numeric]
-      candidates.concat(waiting.values.compact) unless waiting.empty?
-      candidates << @deadline_at if @deadline_at
+      nearest = @deadline_at
+
+      unless waiting.empty?
+        waiting.each_value do |deadline|
+          nearest = deadline if deadline && (nearest.nil? || deadline < nearest)
+        end
+      end
 
       if child_scopes?
         child_scopes.each do |scope|
           child_nearest = scope.nearest_timeout_at
-          candidates << child_nearest if child_nearest
+          nearest = child_nearest if child_nearest && (nearest.nil? || child_nearest < nearest)
         end
       end
 
-      candidates.min
+      nearest
     end
 
     private
 
     attr_reader :parent_scope
 
-    def thread_local_state
-      return @thread_local_state if defined?(@thread_local_state)
+    def ensure_wakeup_pipe
+      return if @wakeup_reader
 
-      state = Thread.current.thread_variable_get(:ori_scope_states)
-      if state.nil?
-        state = {}
-        Thread.current.thread_variable_set(:ori_scope_states, state)
-      end
-
-      @thread_local_state = state
+      @wakeup_reader, @wakeup_writer = IO.pipe
     end
 
     def child_scopes?
-      state.child_scopes?
+      @_child_scopes && !@_child_scopes.empty?
     end
 
     # -----------------------
@@ -430,43 +454,43 @@ module Ori
     # -----------------------
 
     def process_available_work
-      now = current_time
-      check_deadline!(now)
+      check_deadline! if @deadline_at
 
-      cleanup_dead_fibers
+      if @needs_cleanup && @has_io
+        cleanup_dead_fibers
+        @needs_cleanup = false
+      end
 
       process_pending_fibers
       process_blocked_fibers
-      process_io_operations(now)
-      process_timeouts(now)
+      process_io_operations if @has_io
+      process_timeouts
     end
 
     def process_pending_fibers
       pending.size.times do
         fiber = pending.shift
-        # TODO???
-        next if waiting.key?(fiber)
+        next if @has_timeouts && waiting.key?(fiber)
 
         resume_fiber(fiber)
       end
     end
 
     def process_blocked_fibers
-      fibers_to_resume = []
+      return if blocked.empty?
 
-      # TODO: shuffle blocked before processing?
+      fibers_to_resume = nil
+
       blocked.each do |fiber, resource|
-        case resource
-        when Ori::Channel, Ori::Broadcast::Subscription
-          fibers_to_resume << fiber if resource.value?
-        when Ori::Promise
-          fibers_to_resume << fiber if resource.resolved?
-        when Ori::Semaphore, Ori::ReentrantSemaphore
-          fibers_to_resume << fiber if resource.available?
+        if resource.ready?
+          (fibers_to_resume ||= []) << fiber
         end
       end
 
-      check_stalled_fibers! if fibers_to_resume.empty?
+      unless fibers_to_resume
+        check_stalled_fibers!
+        return
+      end
 
       fibers_to_resume.each do |fiber|
         blocked.delete(fiber)
@@ -475,14 +499,17 @@ module Ori
     end
 
     def process_io_operations(now = nil)
-      has_io = readable.any? || writable.any?
-      has_wakeup = @wakeup_mutex.synchronize { @wakeup_queue.any? }
+      has_io = !readable.empty? || !writable.empty?
+
+      # Fast path: skip mutex if no wakeups queued (check without lock)
+      has_wakeup = !@wakeup_queue.empty?
 
       # Process any already-queued wakeups before selecting
       drain_wakeup_queue if has_wakeup
 
       return unless has_io
 
+      ensure_wakeup_pipe
       select_readable = readable.keys
       select_readable << @wakeup_reader
 
@@ -508,11 +535,15 @@ module Ori
 
     def drain_wakeup_queue
       interrupts = nil #: Hash[Fiber, Exception]?
-      fibers = @wakeup_mutex.synchronize do
-        unless @pending_interrupts.empty?
-          interrupts = @pending_interrupts.dup
-          @pending_interrupts.clear
+      fibers = if @wakeup_mutex
+        @wakeup_mutex.synchronize do
+          if @pending_interrupts && !@pending_interrupts.empty?
+            interrupts = @pending_interrupts.dup
+            @pending_interrupts.clear
+          end
+          @wakeup_queue.shift(@wakeup_queue.size)
         end
+      else
         @wakeup_queue.shift(@wakeup_queue.size)
       end
 
@@ -530,9 +561,10 @@ module Ori
     def close_scope
       @closed = true
       @tracer&.record_scope(@scope_id, :closed)
-      thread_local_state&.delete(object_id)
-      @wakeup_reader&.close unless @wakeup_reader&.closed?
-      @wakeup_writer&.close unless @wakeup_writer&.closed?
+      if @wakeup_reader
+        @wakeup_reader.close unless @wakeup_reader.closed?
+        @wakeup_writer.close unless @wakeup_writer.closed?
+      end
     end
 
     # ------------------------------
@@ -544,14 +576,16 @@ module Ori
     end
 
     def process_timeouts(now = current_time)
-      check_deadline!
+      return if waiting.empty?
 
-      fibers_to_resume = []
+      fibers_to_resume = nil
       waiting.each do |fiber, deadline|
         if deadline <= now
-          fibers_to_resume << fiber
+          (fibers_to_resume ||= []) << fiber
         end
       end
+
+      return unless fibers_to_resume
 
       fibers_to_resume.each do |fiber|
         waiting.delete(fiber)
@@ -571,7 +605,7 @@ module Ori
     end
 
     def check_stalled_fibers!
-      return false if blocked.none?
+      return false if blocked.empty?
       return false if root_scope.has_active_work?
 
       error = DeadlockError.new(self)
@@ -604,14 +638,55 @@ module Ori
     end
 
     def resume_fiber(fiber)
-      resume_task_or_fiber(task_queue.fetch(fiber, fiber))
+      task = task_queue[fiber]
+      if task
+        resume_task(task)
+      else
+        resume_task_or_fiber(fiber)
+      end
+    end
+
+    def resume_task(task)
+      return unless task.alive?
+
+      fiber = task.fiber
+
+      begin
+        return if @cancelled
+
+        # Inline task.resume to avoid double dispatch
+        fiber_result = fiber.resume
+
+        if fiber.alive?
+          if fiber_result.is_a?(Ori::Selectable)
+            # Resource yielded (Channel, Promise, Semaphore, etc.)
+            if @tracer
+              id = task_queue[fiber]&.id
+              @tracer.record(id, :resource_wait, fiber_result.class.name)
+            end
+            blocked[fiber] = fiber_result
+          else
+            pending << fiber
+          end
+        else
+          # Fiber completed — store value in task
+          task._set_value(fiber_result)
+          @needs_cleanup = true
+        end
+      rescue => error
+        if @tracer
+          id = task_queue[fiber]&.id
+          @tracer.record(id, :error, error.message)
+        end
+        shutdown!(error)
+        raise(error)
+      end
     end
 
     def resume_task_or_fiber(task_or_fiber)
       return unless task_or_fiber.alive?
 
       fiber = task_or_fiber.is_a?(Task) ? task_or_fiber.fiber : task_or_fiber
-      id = fiber_ids[fiber]
 
       begin
         return if @cancelled # Early return if cancelled
@@ -619,23 +694,40 @@ module Ori
         result = task_or_fiber.resume
         case result
         when CancellationError
-          @tracer&.record(id, :cancelled, result.message)
+          if @tracer
+            id = task_queue[fiber]&.id
+            @tracer.record(id, :cancelled, result.message)
+          end
           task_or_fiber.kill
-        when Ori::Channel, Ori::Promise, Ori::Semaphore, Ori::ReentrantSemaphore, Ori::Broadcast::Subscription
-          @tracer&.record(id, :resource_wait, result.class.name)
-          blocked[fiber] = result
+          @needs_cleanup = true
         when Task
           pending << fiber
+        when Ori::Selectable
+          if @tracer
+            id = task_queue[fiber]&.id
+            @tracer.record(id, :resource_wait, result.class.name)
+          end
+          blocked[fiber] = result
         else
-          pending << fiber if fiber.alive?
+          if fiber.alive?
+            pending << fiber
+          else
+            @needs_cleanup = true
+          end
         end
       rescue => error
-        @tracer&.record(id, :error, error.message)
+        if @tracer
+          id = task_queue[fiber]&.id
+          @tracer.record(id, :error, error.message)
+        end
         shutdown!(error)
         raise(error)
       end
 
-      @tracer&.record(id, :completed) unless fiber.alive?
+      if @tracer && !fiber.alive?
+        id = task_queue[fiber]&.id
+        @tracer.record(id, :completed)
+      end
     end
 
     def interrupt_fiber(fiber, exception)
@@ -648,8 +740,10 @@ module Ori
     def cancel_fiber!(fiber, error)
       return unless fiber.alive?
 
-      id = fiber_ids[fiber]
-      @tracer&.record(id, :cancelling, error.message)
+      if @tracer
+        id = task_queue[fiber]&.id
+        @tracer.record(id, :cancelling, error.message)
+      end
 
       if (task = task_queue[fiber])
         task.cancel(error)
@@ -657,7 +751,10 @@ module Ori
         fiber.raise(error)
       end
 
-      @tracer&.record(id, :cancelled, error.message)
+      if @tracer
+        id ||= task_queue[fiber]&.id
+        @tracer.record(id, :cancelled, error.message)
+      end
     end
 
     # --------------------
@@ -678,7 +775,6 @@ module Ori
     end
 
     def register_task(task)
-      fiber_ids[task.fiber] = task.id
       task_queue[task.fiber] = task
 
       if @tracer
@@ -690,23 +786,25 @@ module Ori
     def register_timeout(fiber, deadline)
       return unless deadline
 
+      @has_timeouts = true
       waiting[fiber] = current_time + deadline
     end
 
+    IO_ADDED_READABLE = 1
+    IO_ADDED_WRITABLE = 2
+
     def register_io_wait(fiber, io, events)
-      added = {
-        readable: false,
-        writable: false,
-      } #: Hash[Symbol, bool]
+      @has_io = true
+      added = 0
 
       if (events & IO::READABLE).nonzero?
-        readable[io].add(fiber)
-        added[:readable] = true
+        (readable[io] ||= Set.new).add(fiber)
+        added |= IO_ADDED_READABLE
       end
 
       if (events & IO::WRITABLE).nonzero?
-        writable[io].add(fiber)
-        added[:writable] = true
+        (writable[io] ||= Set.new).add(fiber)
+        added |= IO_ADDED_WRITABLE
       end
 
       added
@@ -717,20 +815,23 @@ module Ori
     # ---------------
 
     def cleanup_dead_fibers
-      dead_fibers = fiber_ids.reject { |fiber, _| fiber.alive? }.to_set
-      return if dead_fibers.empty?
+      had_dead = false
+      task_queue.delete_if do |fiber, _|
+        unless fiber.alive?
+          waiting.delete(fiber)
+          had_dead = true
+        end
+      end
+      return unless had_dead
 
-      readable.each { |_, fibers| fibers.subtract(dead_fibers) }
-      readable.delete_if { |_, fibers| fibers.empty? }
+      unless readable.empty?
+        readable.each_value { |fibers| fibers.delete_if { |f| !f.alive? } }
+        readable.delete_if { |_, fibers| fibers.empty? }
+      end
 
-      writable.each { |_, fibers| fibers.subtract(dead_fibers) }
-      writable.delete_if { |_, fibers| fibers.empty? }
-
-      waiting.delete_if { |fiber, _| dead_fibers.include?(fiber) }
-
-      dead_fibers.each do |fiber|
-        fiber_ids.delete(fiber)
-        task_queue.delete(fiber)
+      unless writable.empty?
+        writable.each_value { |fibers| fibers.delete_if { |f| !f.alive? } }
+        writable.delete_if { |_, fibers| fibers.empty? }
       end
     end
 
@@ -749,50 +850,47 @@ module Ori
     end
 
     def cleanup_io_wait(fiber, io, added)
-      state = thread_local_state&.[](object_id)
-      return unless state
+      if (added & IO_ADDED_READABLE).nonzero?
+        @readable[io]&.delete(fiber)
+        @readable.delete(io) if @readable[io]&.empty?
+      end
 
-      state.readable[io]&.delete(fiber) if added[:readable]
-      state.writable[io]&.delete(fiber) if added[:writable]
-
-      state.readable.delete(io) if state.readable[io]&.empty?
-      state.writable.delete(io) if state.writable[io]&.empty?
+      if (added & IO_ADDED_WRITABLE).nonzero?
+        @writable[io]&.delete(fiber)
+        @writable.delete(io) if @writable[io]&.empty?
+      end
     end
 
     def cleanup_timeout(fiber)
-      state = thread_local_state&.[](object_id)
-      state&.waiting&.delete(fiber)
+      @waiting&.delete(fiber)
     end
 
     # -------------
     # --- State ---
     # -------------
 
-    def state
-      thread_local_state&.[](object_id) or
-        raise "Scope accessed from wrong thread"
-    end
+    #: () -> Hash
+    def task_queue = @task_queue
 
-    #: () -> LazyHash
-    def task_queue = state.tasks
+    #: () -> Array
+    def pending = @pending
 
-    #: () -> LazyArray
-    def pending = state.pending
+    #: () -> Hash
+    def readable = @readable
 
-    #: () -> LazyHashSet
-    def readable = state.readable
+    #: () -> Hash
+    def writable = @writable
 
-    #: () -> LazyHashSet
-    def writable = state.writable
+    #: () -> Hash
+    def waiting = @waiting
 
-    #: () -> LazyHash
-    def waiting = state.waiting
-
-    #: () -> LazyHash
-    def blocked = state.blocked
+    #: () -> Hash
+    def blocked = @blocked
 
     #: () -> Set[Scope]
-    def child_scopes = state.child_scopes
+    def child_scopes
+      @_child_scopes ||= Set.new
+    end
 
     # -----------------
     # --- Debugging ---

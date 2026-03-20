@@ -6,12 +6,12 @@ module Ori
 
     EMPTY = :empty
 
-    attr_reader :fiber
+    attr_reader :fiber, :id
 
     def initialize(&block)
       @fiber = Fiber.new(&block)
-      @killed = false
       @value = EMPTY
+      @id = @fiber.object_id
     end
 
     def alive?
@@ -27,33 +27,28 @@ module Ori
     end
 
     def killed?
-      @killed
+      !@fiber.alive? && @value == EMPTY
     end
 
     def kill
       @fiber.kill
-      @killed = true
       @value = EMPTY
     end
 
-    def id
-      @id ||= @fiber.object_id
+    # @api private — used by Scope to set value directly
+    def _set_value(v)
+      @value = v
     end
 
     def resume
-      if @cancellation_error
-        @fiber.kill
-        return @cancellation_error
-      end
-
       fiber_result = @fiber.resume
 
-      case fiber_result
-      when Ori::Channel, Ori::Promise, Ori::Semaphore, Ori::ReentrantSemaphore
+      # Check for resource yielded by fiber (Channel, Promise, Semaphore, etc.)
+      if fiber_result.is_a?(Ori::Selectable)
         fiber_result
+      elsif @fiber.alive?
+        self
       else
-        return self if @fiber.alive?
-
         @value = fiber_result
       end
     rescue => error
@@ -71,8 +66,8 @@ module Ori
     end
 
     def cancel(error)
-      @cancellation_error = error
-      resume
+      @fiber.kill
+      error
     end
   end
 end

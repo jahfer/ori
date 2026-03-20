@@ -1,9 +1,11 @@
 # typed: strict
 
 module Ori
-  # @abstract
   module Selectable
     #: () -> untyped
     def await; end
+
+    #: () -> bool
+    def ready?; false; end
   end
 end

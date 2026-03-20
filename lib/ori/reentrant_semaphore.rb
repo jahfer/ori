@@ -56,6 +56,8 @@ module Ori
       @available > 0 || @owners[Fiber.current] > 0
     end
 
+    alias_method :ready?, :available?
+
     def count
       @available
     end

@@ -1,0 +1,2 @@
+- **Push-based wakeup for promises/channels**: Instead of polling `process_blocked_fibers` every iteration, when a promise is resolved or channel gets a value, directly schedule the waiting fiber. Would require resources to know about their scope/scheduler. High impact but architectural change.
+- **YJIT insight**: Direct ivar access (@pending, @blocked etc) is SLOWER than accessor methods. YJIT optimizes small methods better than inline ivar reads. Keep using methods.

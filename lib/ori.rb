@@ -26,23 +26,23 @@ module Ori
   class << self
     #: (?name: String?, ?cancel_after: Numeric?, ?raise_after: Numeric?, ?trace: bool) { (Scope) -> void } -> Scope
     def sync(name: nil, cancel_after: nil, raise_after: nil, trace: false, &block)
-      deadline = cancel_after || raise_after
       prev_scheduler = Fiber.current_scheduler
+      parent = prev_scheduler.is_a?(Scope) ? prev_scheduler : nil
 
       scope = Scope.new(
-        prev_scheduler.is_a?(Scope) ? prev_scheduler : nil,
+        parent,
         name,
-        deadline,
+        cancel_after || raise_after,
         trace,
       )
 
       Fiber.set_scheduler(scope)
 
       begin
-        if Fiber.current.blocking?
-          scope.fork { block.call(scope) }
-        else
+        if parent
           yield(scope)
+        else
+          scope.fork { block.call(scope) }
         end
 
         scope.await
@@ -50,12 +50,9 @@ module Ori
       rescue DeadlockError
         raise
       rescue CancellationError => error
-        # Re-raise if:
-        # 1. The error is from a different scope, or
-        # 2. This is our error but it's from raise_after
         raise if error.scope != scope || !raise_after.nil?
 
-        scope # Return the scope even when cancelled
+        scope
       ensure
         Fiber.set_scheduler(prev_scheduler)
       end

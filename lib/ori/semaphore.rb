@@ -12,11 +12,21 @@ module Ori
     end
 
     def sync
-      acquire
-      begin
-        yield
-      ensure
-        release
+      if @available > 0
+        # Fast path: ticket available immediately
+        @available -= 1
+        begin
+          yield
+        ensure
+          @available += 1
+        end
+      else
+        acquire
+        begin
+          yield
+        ensure
+          release
+        end
       end
     end
 
@@ -28,7 +38,7 @@ module Ori
     end
 
     def acquire
-      Fiber.yield(self) until available?
+      Fiber.yield(self) until @available > 0
       @available -= 1
       true
     end
@@ -36,6 +46,8 @@ module Ori
     def available?
       @available > 0
     end
+
+    alias_method :ready?, :available?
 
     def count
       @available

@@ -23,6 +23,8 @@ module Ori
       @resolved
     end
 
+    alias_method :ready?, :resolved?
+
     def deconstruct
       await unless resolved?
       [@value]
@@ -30,9 +32,9 @@ module Ori
 
     #: () -> E
     def await
-      return @value if resolved?
+      return @value if @resolved
 
-      Fiber.yield(self) until resolved?
+      Fiber.yield(self) until @resolved
       @value
     end
   end

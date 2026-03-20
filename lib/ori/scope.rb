@@ -48,9 +48,17 @@ module Ori
       @pending_interrupts = nil #: Hash[Fiber, Exception]?
       @wakeup_reader = nil
       @wakeup_writer = nil
-      @state = ThreadLocalState.new
       @needs_cleanup = false
       @tracer = nil
+
+      # Cache state collections directly as ivars for zero-indirection access
+      @task_queue = {} # fiber → Task
+      @pending = []
+      @readable = Hash.new { |hash, key| hash[key] = Set.new }
+      @writable = Hash.new { |hash, key| hash[key] = Set.new }
+      @waiting = {}
+      @blocked = {}
+      @_child_scopes = nil
 
       if parent_scope
         parent_scope.register_child_scope(self)
@@ -360,7 +368,7 @@ module Ori
     attr_reader :deadline_owner
 
     #: () -> Hash
-    def fiber_ids = @state.tasks
+    def fiber_ids = @task_queue
 
     def remaining_deadline
       return unless @deadline_at
@@ -436,7 +444,7 @@ module Ori
     end
 
     def child_scopes?
-      @state.child_scopes?
+      @_child_scopes && !@_child_scopes.empty?
     end
 
     # -----------------------
@@ -845,18 +853,15 @@ module Ori
     end
 
     def cleanup_io_wait(fiber, io, added)
-      s = @state
-      return unless s
+      @readable[io]&.delete(fiber) if added[:readable]
+      @writable[io]&.delete(fiber) if added[:writable]
 
-      s.readable[io]&.delete(fiber) if added[:readable]
-      s.writable[io]&.delete(fiber) if added[:writable]
-
-      s.readable.delete(io) if s.readable[io]&.empty?
-      s.writable.delete(io) if s.writable[io]&.empty?
+      @readable.delete(io) if @readable[io]&.empty?
+      @writable.delete(io) if @writable[io]&.empty?
     end
 
     def cleanup_timeout(fiber)
-      @state&.waiting&.delete(fiber)
+      @waiting&.delete(fiber)
     end
 
     # -------------
@@ -867,26 +872,28 @@ module Ori
       @state
     end
 
-    #: () -> LazyHash
-    def task_queue = @state.tasks
+    #: () -> Hash
+    def task_queue = @task_queue
 
-    #: () -> LazyArray
-    def pending = @state.pending
+    #: () -> Array
+    def pending = @pending
 
-    #: () -> LazyHashSet
-    def readable = @state.readable
+    #: () -> Hash
+    def readable = @readable
 
-    #: () -> LazyHashSet
-    def writable = @state.writable
+    #: () -> Hash
+    def writable = @writable
 
-    #: () -> LazyHash
-    def waiting = @state.waiting
+    #: () -> Hash
+    def waiting = @waiting
 
-    #: () -> LazyHash
-    def blocked = @state.blocked
+    #: () -> Hash
+    def blocked = @blocked
 
     #: () -> Set[Scope]
-    def child_scopes = @state.child_scopes
+    def child_scopes
+      @_child_scopes ||= Set.new
+    end
 
     # -----------------
     # --- Debugging ---

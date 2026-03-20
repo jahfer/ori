@@ -1,4 +1,6 @@
-- **Push-based wakeup for promises/channels**: Instead of polling `process_blocked_fibers` every iteration, when a promise is resolved or channel gets a value, directly schedule the waiting fiber. This would require resources to know about their scope/scheduler, fundamentally changing the architecture.
-- **Fiber pool**: Reuse fibers across tasks instead of creating new ones. Fiber.new is a C-level allocation; pooling could save significant overhead for fork_join workloads.
-- **Merge fiber_ids and task_queue**: These are two separate hashes keyed by fiber. Combining into a single hash (fiber → Task) would halve hash lookups during register/cleanup. Requires updating ~30 references but could save 5-10%.
+- **Push-based wakeup for promises/channels**: Instead of polling `process_blocked_fibers` every iteration, when a promise is resolved or channel gets a value, directly schedule the waiting fiber. Would require resources to know about their scope/scheduler. High impact but architectural change.
+- **Fiber pool**: Reuse fibers across tasks instead of creating new ones. Fiber.new is a C-level allocation; pooling could save significant overhead for fork_join workloads. Complex to implement correctly.
 - **Batch resume**: When multiple blocked fibers become ready at once (e.g., after resolver completes), batch their resume calls to avoid repeated hash lookups.
+- **Eliminate ThreadLocalState class**: The @state wrapper adds an extra level of indirection on every accessor call. Could cache each collection directly as ivars on Scope (@pending, @blocked, etc.) to avoid method dispatch through @state.
+- **Avoid `register_io_wait` hash allocation**: The `added` hash in `register_io_wait` is allocated on every io_wait call. Could use integer flags instead.
+- **Skip `process_io_operations` call when no IO ever registered**: Track a flag for whether any IO has been registered during this scope's lifetime.

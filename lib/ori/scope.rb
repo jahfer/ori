@@ -454,6 +454,8 @@ module Ori
     end
 
     def process_blocked_fibers
+      return if blocked.empty?
+
       fibers_to_resume = nil
 
       blocked.each do |fiber, resource|
@@ -547,12 +549,16 @@ module Ori
     def process_timeouts(now = current_time)
       check_deadline!
 
-      fibers_to_resume = []
+      return if waiting.empty?
+
+      fibers_to_resume = nil
       waiting.each do |fiber, deadline|
         if deadline <= now
-          fibers_to_resume << fiber
+          (fibers_to_resume ||= []) << fiber
         end
       end
+
+      return unless fibers_to_resume
 
       fibers_to_resume.each do |fiber|
         waiting.delete(fiber)

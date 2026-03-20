@@ -4,7 +4,6 @@
 require "nio"
 require "io/nonblock"
 require "random/formatter"
-require "ori/lazy"
 require "English"
 
 module Ori

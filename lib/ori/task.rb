@@ -50,12 +50,12 @@ module Ori
 
       fiber_result = @fiber.resume
 
-      case fiber_result
-      when Ori::Channel, Ori::Promise, Ori::Semaphore, Ori::ReentrantSemaphore, Ori::Broadcast::Subscription
+      # Check for resource yielded by fiber (Channel, Promise, Semaphore, etc.)
+      if fiber_result.is_a?(Ori::Selectable)
         fiber_result
+      elsif @fiber.alive?
+        self
       else
-        return self if @fiber.alive?
-
         @value = fiber_result
       end
     rescue => error

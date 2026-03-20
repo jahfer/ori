@@ -730,8 +730,10 @@ module Ori
     def cancel_fiber!(fiber, error)
       return unless fiber.alive?
 
-      id = fiber_ids[fiber]
-      @tracer&.record(id, :cancelling, error.message)
+      if @tracer
+        id = fiber_ids[fiber]
+        @tracer.record(id, :cancelling, error.message)
+      end
 
       if (task = task_queue[fiber])
         task.cancel(error)
@@ -739,7 +741,10 @@ module Ori
         fiber.raise(error)
       end
 
-      @tracer&.record(id, :cancelled, error.message)
+      if @tracer
+        id ||= fiber_ids[fiber]
+        @tracer.record(id, :cancelled, error.message)
+      end
     end
 
     # --------------------

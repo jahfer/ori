@@ -22,6 +22,7 @@ module Ori
       @wakeup_reader = nil
       @wakeup_writer = nil
       @needs_cleanup = false
+      @has_io = false # Set when IO operations or cross-thread wakeups occur
       @tracer = nil
 
       # Cache state collections directly as ivars for zero-indirection access
@@ -234,6 +235,7 @@ module Ori
       # Thread-safe: enqueue the fiber and signal the event loop
       # via the wakeup pipe. unblock may be called from any thread.
       @wakeup_mutex.synchronize { @wakeup_queue << fiber }
+      @has_io = true
       ensure_wakeup_pipe
       @wakeup_writer.write_nonblock(".") rescue nil # rubocop:disable Style/RescueModifier
     end
@@ -243,6 +245,7 @@ module Ori
         (@pending_interrupts ||= {})[fiber] = exception
         @wakeup_queue << fiber
       end
+      @has_io = true
       ensure_wakeup_pipe
       @wakeup_writer.write_nonblock(".") rescue nil # rubocop:disable Style/RescueModifier
     end
@@ -438,7 +441,7 @@ module Ori
 
       process_pending_fibers
       process_blocked_fibers
-      process_io_operations
+      process_io_operations if @has_io
       process_timeouts
     end
 
@@ -775,6 +778,7 @@ module Ori
     IO_ADDED_WRITABLE = 2
 
     def register_io_wait(fiber, io, events)
+      @has_io = true
       added = 0
 
       if (events & IO::READABLE).nonzero?

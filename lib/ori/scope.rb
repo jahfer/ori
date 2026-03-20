@@ -577,8 +577,6 @@ module Ori
     end
 
     def process_timeouts(now = current_time)
-      check_deadline!
-
       return if waiting.empty?
 
       fibers_to_resume = nil

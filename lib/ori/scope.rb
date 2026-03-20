@@ -10,8 +10,7 @@ require "English"
 module Ori
   class Scope
     class ThreadLocalState
-      attr_reader :fiber_ids,
-        :tasks,
+      attr_reader :tasks,
         :pending,
         :readable,
         :writable,
@@ -19,8 +18,7 @@ module Ori
         :blocked
 
       def initialize
-        @fiber_ids = {}
-        @tasks = {}
+        @tasks = {} # fiber → Task (serves as both fiber registry and task lookup)
         @pending = []
         @readable = Hash.new { |hash, key| hash[key] = Set.new }
         @writable = Hash.new { |hash, key| hash[key] = Set.new }
@@ -67,7 +65,7 @@ module Ori
 
       if @tracer
         @scope_id = Random.uuid_v7(extra_timestamp_bits: 12)
-        creating_fiber_id = parent_scope.fiber_ids[Fiber.current] if parent_scope
+        creating_fiber_id = parent_scope.fiber_ids[Fiber.current]&.id if parent_scope
         @tracer.register_scope(@scope_id, parent_scope&.scope_id, creating_fiber_id, name: @name)
         @tracer.record_scope(@scope_id, :opened)
       end
@@ -100,7 +98,6 @@ module Ori
       raise "Scope is closed" if @closed
 
       task = Task.new(&block)
-      fiber_ids[task.fiber] = task.id
       task_queue[task.fiber] = task
 
       if @tracer
@@ -163,10 +160,10 @@ module Ori
     end
 
     def io_wait(io, events, timeout = nil)
-      return @parent_scope.io_wait(io, events, timeout) unless fiber_ids.key?(Fiber.current)
+      return @parent_scope.io_wait(io, events, timeout) unless task_queue.key?(Fiber.current)
 
       fiber = Fiber.current
-      id = fiber_ids[fiber]
+      id = task_queue[fiber]&.id
       @tracer&.record(id, :waiting_io, "#{io.inspect}:#{events}")
 
       added = register_io_wait(fiber, io, events)
@@ -189,7 +186,7 @@ module Ori
     end
 
     def io_select(readables, writables, exceptables, timeout)
-      unless fiber_ids.key?(Fiber.current)
+      unless task_queue.key?(Fiber.current)
         return @parent_scope.io_select(readables, writables, exceptables, timeout)
       end
 
@@ -223,10 +220,10 @@ module Ori
     end
 
     def kernel_sleep(duration)
-      return @parent_scope.kernel_sleep(duration) unless fiber_ids.key?(Fiber.current)
+      return @parent_scope.kernel_sleep(duration) unless task_queue.key?(Fiber.current)
 
       fiber = Fiber.current
-      id = fiber_ids[fiber]
+      id = task_queue[fiber]&.id
       @tracer&.record(id, :sleeping, duration)
 
       if duration > 0
@@ -238,7 +235,7 @@ module Ori
     end
 
     def block(...)
-      unless fiber_ids.key?(Fiber.current)
+      unless task_queue.key?(Fiber.current)
         return @parent_scope.block(...) if @parent_scope
       end
 
@@ -249,7 +246,7 @@ module Ori
     end
 
     def unblock(blocker, fiber)
-      unless fiber_ids.key?(fiber)
+      unless task_queue.key?(fiber)
         return @parent_scope.unblock(blocker, fiber) if @parent_scope
       end
 
@@ -270,7 +267,7 @@ module Ori
     end
 
     def io_read(io, buffer, length, offset)
-      return @parent_scope.io_read(io, buffer, length, offset) unless fiber_ids.key?(Fiber.current)
+      return @parent_scope.io_read(io, buffer, length, offset) unless task_queue.key?(Fiber.current)
 
       io.nonblock = true unless io.closed?
       total = 0 #: Integer
@@ -299,7 +296,7 @@ module Ori
     end
 
     def io_write(io, buffer, length, offset)
-      return @parent_scope.io_write(io, buffer, length, offset) unless fiber_ids.key?(Fiber.current)
+      return @parent_scope.io_write(io, buffer, length, offset) unless task_queue.key?(Fiber.current)
 
       io.nonblock = true unless io.closed?
       total = 0 #: Integer
@@ -321,10 +318,10 @@ module Ori
     end
 
     def process_wait(pid, flags)
-      return @parent_scope.process_wait(pid, flags) unless fiber_ids.key?(Fiber.current)
+      return @parent_scope.process_wait(pid, flags) unless task_queue.key?(Fiber.current)
 
       fiber = Fiber.current
-      id = fiber_ids[fiber]
+      id = task_queue[fiber]&.id
       @tracer&.record(id, :waiting_process, "pid=#{pid}")
 
       # Bridge thread-based process waiting into the IO event loop.
@@ -362,8 +359,8 @@ module Ori
     attr_reader :scope_id
     attr_reader :deadline_owner
 
-    #: () -> LazyHash
-    def fiber_ids = @state.fiber_ids
+    #: () -> Hash
+    def fiber_ids = @state.tasks
 
     def remaining_deadline
       return unless @deadline_at
@@ -653,7 +650,7 @@ module Ori
         case result
         when CancellationError
           if @tracer
-            id = fiber_ids[fiber]
+            id = task_queue[fiber]&.id
             @tracer.record(id, :cancelled, result.message)
           end
           task.kill
@@ -662,7 +659,7 @@ module Ori
           pending << fiber
         when Ori::Selectable
           if @tracer
-            id = fiber_ids[fiber]
+            id = task_queue[fiber]&.id
             @tracer.record(id, :resource_wait, result.class.name)
           end
           blocked[fiber] = result
@@ -675,7 +672,7 @@ module Ori
         end
       rescue => error
         if @tracer
-          id = fiber_ids[fiber]
+          id = task_queue[fiber]&.id
           @tracer.record(id, :error, error.message)
         end
         shutdown!(error)
@@ -695,7 +692,7 @@ module Ori
         case result
         when CancellationError
           if @tracer
-            id = fiber_ids[fiber]
+            id = task_queue[fiber]&.id
             @tracer.record(id, :cancelled, result.message)
           end
           task_or_fiber.kill
@@ -704,7 +701,7 @@ module Ori
           pending << fiber
         when Ori::Selectable
           if @tracer
-            id = fiber_ids[fiber]
+            id = task_queue[fiber]&.id
             @tracer.record(id, :resource_wait, result.class.name)
           end
           blocked[fiber] = result
@@ -717,7 +714,7 @@ module Ori
         end
       rescue => error
         if @tracer
-          id = fiber_ids[fiber]
+          id = task_queue[fiber]&.id
           @tracer.record(id, :error, error.message)
         end
         shutdown!(error)
@@ -725,7 +722,7 @@ module Ori
       end
 
       if @tracer && !fiber.alive?
-        id = fiber_ids[fiber]
+        id = task_queue[fiber]&.id
         @tracer.record(id, :completed)
       end
     end
@@ -741,7 +738,7 @@ module Ori
       return unless fiber.alive?
 
       if @tracer
-        id = fiber_ids[fiber]
+        id = task_queue[fiber]&.id
         @tracer.record(id, :cancelling, error.message)
       end
 
@@ -752,7 +749,7 @@ module Ori
       end
 
       if @tracer
-        id ||= fiber_ids[fiber]
+        id ||= task_queue[fiber]&.id
         @tracer.record(id, :cancelled, error.message)
       end
     end
@@ -775,7 +772,6 @@ module Ori
     end
 
     def register_task(task)
-      fiber_ids[task.fiber] = task.id
       task_queue[task.fiber] = task
 
       if @tracer
@@ -815,9 +811,8 @@ module Ori
 
     def cleanup_dead_fibers
       had_dead = false
-      fiber_ids.delete_if do |fiber, _|
+      task_queue.delete_if do |fiber, _|
         unless fiber.alive?
-          task_queue.delete(fiber)
           waiting.delete(fiber)
           had_dead = true
         end

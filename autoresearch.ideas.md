@@ -1,4 +1,4 @@
 - **Push-based wakeup for promises/channels**: Instead of polling `process_blocked_fibers` every iteration, when a promise is resolved or channel gets a value, directly schedule the waiting fiber. This would require resources to know about their scope/scheduler, fundamentally changing the architecture.
 - **Fiber pool**: Reuse fibers across tasks instead of creating new ones. Fiber.new is a C-level allocation; pooling could save significant overhead for fork_join workloads.
-- **Merge fiber_ids and task_queue**: These are two separate hashes keyed by fiber. Combining into a single hash (fiber → {id, task}) would halve hash lookups during register/cleanup.
-- **Avoid Hash#[] with default proc for readable/writable**: The `Hash.new { |h,k| h[k] = Set.new }` creates Sets eagerly on any access including .key? checks. Consider plain hash with explicit Set creation on write.
+- **Merge fiber_ids and task_queue**: These are two separate hashes keyed by fiber. Combining into a single hash (fiber → Task) would halve hash lookups during register/cleanup. Requires updating ~30 references but could save 5-10%.
+- **Batch resume**: When multiple blocked fibers become ready at once (e.g., after resolver completes), batch their resume calls to avoid repeated hash lookups.

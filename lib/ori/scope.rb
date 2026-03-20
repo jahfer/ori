@@ -378,7 +378,7 @@ module Ori
     end
 
     def pending_work?
-      return false if closed?
+      return false if @closed
 
       # Fast non-empty checks before expensive alive? iteration
       return true unless @wakeup_queue.empty?
@@ -398,7 +398,7 @@ module Ori
 
     # Purposefully excludes blocked fibers from checks
     def has_active_work?
-      return false if closed?
+      return false if @closed
 
       return true unless @wakeup_queue.empty?
       return true unless pending.empty?

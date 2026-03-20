@@ -37,13 +37,17 @@ module Ori
 
       #: () -> E
       def take
-        Fiber.yield(self) until value?
+        if @queue.empty?
+          Fiber.yield(self) until !@queue.empty?
+        end
         @queue.shift #: as E
       end
 
       #: () -> E
       def peek
-        Fiber.yield(self) until value?
+        if @queue.empty?
+          Fiber.yield(self) until !@queue.empty?
+        end
         @queue.first #: as E
       end
 

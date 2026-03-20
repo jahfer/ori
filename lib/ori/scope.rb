@@ -16,7 +16,7 @@ module Ori
       @parent_scope = parent_scope
       @cancelled = false
       @closed = false
-      @wakeup_mutex = ::Mutex.new
+      @wakeup_mutex = nil
       @wakeup_queue = [] #: Array[Fiber]
       @pending_interrupts = nil #: Hash[Fiber, Exception]?
       @wakeup_reader = nil
@@ -235,14 +235,14 @@ module Ori
 
       # Thread-safe: enqueue the fiber and signal the event loop
       # via the wakeup pipe. unblock may be called from any thread.
-      @wakeup_mutex.synchronize { @wakeup_queue << fiber }
+      (@wakeup_mutex ||= ::Mutex.new).synchronize { @wakeup_queue << fiber }
       @has_io = true
       ensure_wakeup_pipe
       @wakeup_writer.write_nonblock(".") rescue nil # rubocop:disable Style/RescueModifier
     end
 
     def fiber_interrupt(fiber, exception)
-      @wakeup_mutex.synchronize do
+      (@wakeup_mutex ||= ::Mutex.new).synchronize do
         (@pending_interrupts ||= {})[fiber] = exception
         @wakeup_queue << fiber
       end
@@ -524,11 +524,15 @@ module Ori
 
     def drain_wakeup_queue
       interrupts = nil #: Hash[Fiber, Exception]?
-      fibers = @wakeup_mutex.synchronize do
-        if @pending_interrupts && !@pending_interrupts.empty?
-          interrupts = @pending_interrupts.dup
-          @pending_interrupts.clear
+      fibers = if @wakeup_mutex
+        @wakeup_mutex.synchronize do
+          if @pending_interrupts && !@pending_interrupts.empty?
+            interrupts = @pending_interrupts.dup
+            @pending_interrupts.clear
+          end
+          @wakeup_queue.shift(@wakeup_queue.size)
         end
+      else
         @wakeup_queue.shift(@wakeup_queue.size)
       end
 

@@ -51,7 +51,12 @@ Minimize framework overhead in Ori's Scope (the fiber scheduler / event loop) to
 9. **Inline UnboundedQueue** — Use plain array for channel buffer, eliminating wrapper.
 10. **Merge fiber_ids and task_queue into single hash** (+4.7%) — Halved hash operations per fiber.
 11. **Remove cancellation_error from Task#resume hot path** — Moved to cancel() method.
-12. Various micro-optimizations: split await loop, defer current_time, optimize close_scope, attr_reader for Task#id, etc.
+12. **Eliminate ThreadLocalState indirection** (+0.6%) — Cache collections directly as Scope ivars.
+13. **Fast-path in Select.await** — Return immediately if resource already ready (select -48%).
+14. **Inline fiber.resume in resume_task** (+6.4%) — Skip double dispatch through Task#resume.
+15. **Skip process_io_operations for non-IO scopes** (+1.2%) — Track `@has_io` flag.
+16. **Optimize Ori.sync** — Reuse parent check instead of Fiber.current.blocking?.
+17. Various micro-optimizations: split await loop, defer current_time, optimize close_scope, attr_reader for Task#id, integer flags for IO wait, etc.
 
 ### Dead ends (discarded)
 - Swap-and-drain pending array — Ruby's Array#shift is already fast for small arrays.
@@ -61,3 +66,7 @@ Minimize framework overhead in Ori's Scope (the fiber scheduler / event loop) to
 - Avoid Fiber.current.blocking? — Marginal, changes semantics slightly.
 - Use equal? for sentinel — Symbol != is already identity comparison.
 - Inline process_pending/blocked into process_available_work — Ruby inlines methods.
+- Inline all ivar accesses instead of methods — YJIT optimizes small methods better (-9%!).
+- blocked_dirty flag — Causes missed wakeups (some state changes happen outside process_pending).
+- delete_if in process_blocked_fibers — Hangs (resume modifies blocked during iteration).
+- Replace case/when with if/is_a? — Equivalent performance.

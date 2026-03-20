@@ -451,12 +451,7 @@ module Ori
         fiber = pending.shift
         next if @has_timeouts && waiting.key?(fiber)
 
-        task = task_queue[fiber]
-        if task
-          resume_task(task)
-        else
-          resume_task_or_fiber(fiber)
-        end
+        resume_fiber(fiber)
       end
     end
 
@@ -478,12 +473,7 @@ module Ori
 
       fibers_to_resume.each do |fiber|
         blocked.delete(fiber)
-        task = task_queue[fiber]
-        if task
-          resume_task(task)
-        else
-          resume_task_or_fiber(fiber)
-        end
+        resume_fiber(fiber)
       end
     end
 

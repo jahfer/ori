@@ -12,6 +12,8 @@ module Ori
       @fiber = Fiber.new(&block)
       @killed = false
       @value = EMPTY
+      @cancellation_error = nil
+      @id = @fiber.object_id
     end
 
     def alive?
@@ -37,7 +39,7 @@ module Ori
     end
 
     def id
-      @id ||= @fiber.object_id
+      @id
     end
 
     def resume

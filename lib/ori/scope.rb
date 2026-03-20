@@ -435,7 +435,7 @@ module Ori
     def process_available_work
       check_deadline! if @deadline_at
 
-      if @needs_cleanup
+      if @needs_cleanup && @has_io
         cleanup_dead_fibers
         @needs_cleanup = false
       end

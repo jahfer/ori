@@ -179,17 +179,17 @@ module Ori
 
       Fiber.yield
 
-      if added[:readable] && added[:writable]
+      if (added & IO_ADDED_READABLE).nonzero? && (added & IO_ADDED_WRITABLE).nonzero?
         IO::READABLE | IO::WRITABLE
-      elsif added[:readable]
+      elsif (added & IO_ADDED_READABLE).nonzero?
         IO::READABLE
-      elsif added[:writable]
+      elsif (added & IO_ADDED_WRITABLE).nonzero?
         IO::WRITABLE
       else
         0
       end
     ensure
-      cleanup_io_wait(fiber, io, added) if added
+      cleanup_io_wait(fiber, io, added) if added != 0
       cleanup_timeout(fiber) if timeout && fiber
     end
 
@@ -794,20 +794,20 @@ module Ori
       waiting[fiber] = current_time + deadline
     end
 
+    IO_ADDED_READABLE = 1
+    IO_ADDED_WRITABLE = 2
+
     def register_io_wait(fiber, io, events)
-      added = {
-        readable: false,
-        writable: false,
-      } #: Hash[Symbol, bool]
+      added = 0
 
       if (events & IO::READABLE).nonzero?
         readable[io].add(fiber)
-        added[:readable] = true
+        added |= IO_ADDED_READABLE
       end
 
       if (events & IO::WRITABLE).nonzero?
         writable[io].add(fiber)
-        added[:writable] = true
+        added |= IO_ADDED_WRITABLE
       end
 
       added
@@ -853,11 +853,15 @@ module Ori
     end
 
     def cleanup_io_wait(fiber, io, added)
-      @readable[io]&.delete(fiber) if added[:readable]
-      @writable[io]&.delete(fiber) if added[:writable]
+      if (added & IO_ADDED_READABLE).nonzero?
+        @readable[io]&.delete(fiber)
+        @readable.delete(io) if @readable[io]&.empty?
+      end
 
-      @readable.delete(io) if @readable[io]&.empty?
-      @writable.delete(io) if @writable[io]&.empty?
+      if (added & IO_ADDED_WRITABLE).nonzero?
+        @writable[io]&.delete(fiber)
+        @writable.delete(io) if @writable[io]&.empty?
+      end
     end
 
     def cleanup_timeout(fiber)

@@ -17,7 +17,7 @@ module Ori
         @value = EMPTY
       else
         # Buffered channel state
-        @queue = UnboundedQueue.new
+        @queue = []
       end
     end
 
@@ -104,7 +104,7 @@ module Ori
     # Buffered channel implementation
     def put_buffered(item)
       Fiber.yield until @queue.size < @size
-      @queue.push(item)
+      @queue << item
     end
 
     def take_buffered
@@ -114,41 +114,7 @@ module Ori
 
     def peek_buffered
       Fiber.yield(self) until value?
-      @queue.peek
+      @queue.first
     end
   end
-
-  # TODO: implement sliding queue, dropping queue
-  class UnboundedQueue
-    EMPTY = "empty"
-
-    def initialize
-      @buffer = []
-    end
-
-    def size
-      @buffer.size
-    end
-
-    def empty?
-      @buffer.empty?
-    end
-
-    def push(item)
-      @buffer << item
-    end
-
-    def peek
-      if @buffer.empty?
-        EMPTY
-      else
-        @buffer.first
-      end
-    end
-
-    def shift
-      @buffer.shift
-    end
-  end
-  private_constant(:UnboundedQueue)
 end

@@ -422,18 +422,6 @@ module Ori
       @wakeup_reader, @wakeup_writer = IO.pipe
     end
 
-    def thread_local_state
-      return @thread_local_state if defined?(@thread_local_state)
-
-      state = Thread.current.thread_variable_get(:ori_scope_states)
-      if state.nil?
-        state = {}
-        Thread.current.thread_variable_set(:ori_scope_states, state)
-      end
-
-      @thread_local_state = state
-    end
-
     def child_scopes?
       @state.child_scopes?
     end

@@ -60,6 +60,7 @@ module Ori
       @wakeup_writer = nil
 
       @state = ThreadLocalState.new
+      @needs_cleanup = false
 
       inherit_or_register_deadline(deadline)
 
@@ -443,7 +444,10 @@ module Ori
       now = current_time
       check_deadline!(now)
 
-      cleanup_dead_fibers
+      if @needs_cleanup
+        cleanup_dead_fibers
+        @needs_cleanup = false
+      end
 
       process_pending_fibers
       process_blocked_fibers
@@ -638,6 +642,7 @@ module Ori
             @tracer.record(id, :cancelled, result.message)
           end
           task_or_fiber.kill
+          @needs_cleanup = true
         when Task
           pending << fiber
         when Ori::Selectable
@@ -647,7 +652,11 @@ module Ori
           end
           blocked[fiber] = result
         else
-          pending << fiber if fiber.alive?
+          if fiber.alive?
+            pending << fiber
+          else
+            @needs_cleanup = true
+          end
         end
       rescue => error
         if @tracer

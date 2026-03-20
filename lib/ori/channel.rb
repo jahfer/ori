@@ -25,6 +25,9 @@ module Ori
     def put(item)
       if @size.zero?
         put_zero_sized(item)
+      elsif @queue.size < @size
+        # Fast path: buffer has space
+        @queue << item
       else
         put_buffered(item)
       end
@@ -35,6 +38,9 @@ module Ori
     def take
       if @size.zero?
         take_zero_sized
+      elsif !@queue.empty?
+        # Fast path: data available
+        @queue.shift
       else
         take_buffered
       end

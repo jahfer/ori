@@ -437,7 +437,7 @@ module Ori
     # -----------------------
 
     def process_available_work
-      check_deadline!
+      check_deadline! if @deadline_at
 
       if @needs_cleanup
         cleanup_dead_fibers

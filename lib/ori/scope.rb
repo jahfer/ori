@@ -56,7 +56,8 @@ module Ori
       @wakeup_mutex = ::Mutex.new
       @wakeup_queue = [] #: Array[Fiber]
       @pending_interrupts = {} #: Hash[Fiber, Exception]
-      @wakeup_reader, @wakeup_writer = IO.pipe
+      @wakeup_reader = nil
+      @wakeup_writer = nil
 
       @state = ThreadLocalState.new
 
@@ -236,6 +237,7 @@ module Ori
       # Thread-safe: enqueue the fiber and signal the event loop
       # via the wakeup pipe. unblock may be called from any thread.
       @wakeup_mutex.synchronize { @wakeup_queue << fiber }
+      ensure_wakeup_pipe
       @wakeup_writer.write_nonblock(".") rescue nil # rubocop:disable Style/RescueModifier
     end
 
@@ -244,6 +246,7 @@ module Ori
         @pending_interrupts[fiber] = exception
         @wakeup_queue << fiber
       end
+      ensure_wakeup_pipe
       @wakeup_writer.write_nonblock(".") rescue nil # rubocop:disable Style/RescueModifier
     end
 
@@ -410,6 +413,12 @@ module Ori
 
     attr_reader :parent_scope
 
+    def ensure_wakeup_pipe
+      return if @wakeup_reader
+
+      @wakeup_reader, @wakeup_writer = IO.pipe
+    end
+
     def thread_local_state
       return @thread_local_state if defined?(@thread_local_state)
 
@@ -485,6 +494,7 @@ module Ori
 
       return unless has_io
 
+      ensure_wakeup_pipe
       select_readable = readable.keys
       select_readable << @wakeup_reader
 
